@@ -1,0 +1,49 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Server",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "-std=c++17",
+                "-g",
+                "-I/opt/homebrew/include",
+                "chat_server_tcp/Server.cpp",
+                "HashTable.cpp",
+                "-o",
+                "chat_server",
+                "-pthread"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Build and Run Tests",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "-std=c++17",
+                "-g",
+                "-I/opt/homebrew/include",
+                "-I/opt/homebrew/opt/googletest/include",
+                "tests/database_test.cpp",
+                "chat_server_tcp/db.cpp",
+                "-o",
+                "run_tests",
+                "-L/opt/homebrew/lib",
+                "-lgtest",
+                "-lgtest_main",
+                "-pthread"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}
