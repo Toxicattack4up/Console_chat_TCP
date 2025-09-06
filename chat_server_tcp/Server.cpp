@@ -3,6 +3,7 @@
 
 Server::Server() 
 {
+    credentials["admin"] = {hashPassword("admin123"), "Admin"};
     #ifdef _WIN32
         WSADATA wsa;
         if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) { std::cerr << "Winsock error"; exit(1); }
@@ -11,7 +12,7 @@ Server::Server()
     sock = socket(AF_INET, SOCK_STREAM, 0);
 
     if (sock < 0) {
-        std::cerr << "Error to create socket" << std::endl;
+        std::cerr << "Failed to create socket" << std::endl;
         exit(1);
     }
 
@@ -33,16 +34,16 @@ Server::Server()
 
 Server::~Server() 
 {
+    std::lock_guard<std::mutex> lock(clientsMutex);
     #ifdef _WIN32
         closesocket(sock);
         for (int s : clientSockets) closesocket(s);
         WSACleanup();
     #else
         close(sock);
-        std::lock_guard<std::mutex> lock(clientsMutex);
         for (int s : clientSockets) close(s);
-        std::cout << "Server shutdown" << std::endl;
     #endif    
+    std::cout << "Server shutdown" << std::endl;
 }
 
 void Server::run() 
@@ -59,7 +60,8 @@ void Server::run()
             std::cerr << "Failed to accept client connection" << std::endl;
             continue;
         }
-        
+        char clientIP[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &clientAddr.sin_addr, clientIP, INET_ADDRSTRLEN);
         std::cout << "Client connected: " << clientSocket << std::endl;
         {
             std::lock_guard<std::mutex> lock(clientsMutex);
@@ -80,8 +82,7 @@ void Server::handleClient(int clientSocket)
         memset(buffer, 0, sizeof(buffer));
         int rec = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
         
-        if (rec <= 0) 
-        {
+        if (rec <= 0) {
             std::cerr << "Client " << (authorized ? login : std::to_string(clientSocket)) << " disconnected." << std::endl;
             closeClients(clientSocket);
             return;
@@ -90,118 +91,148 @@ void Server::handleClient(int clientSocket)
         buffer[rec] = '\0';
         std::string message(buffer);
 
-        if (!authorized) 
-        {
-            if (message.substr(0, 8) == "REGISTER")
-            {
+        if(message.size() > BUFFER_SIZE - 50) {
+            send(clientSocket, "Message is too long", 16, 0);
+            continue;
+        }
+
+        if (!authorized) {
+            if (message.substr(0, 8) == "REGISTER") {
+
                 std::istringstream iss(message.substr(9));
                 std::string login_input, password_input, name_input;
                 iss >> login_input >> password_input;
-                getline(iss, name_input);
+                std::getline(iss, name_input);
                 name_input = name_input.empty() ? "" : name_input.substr(1);
-                if(findUser(login_input).empty()) 
-                {
+
+                if(findUser(login_input).empty()) {
+
                     addUser(login_input, password_input, name_input);
                     send(clientSocket, "REGISTER_SUCCESS", 16, 0);
                     std::cout << "Client registered: " << login_input << std::endl;
+
                 } else {
                     send(clientSocket, "REGISTER_FAILED", 15, 0);
                 }
-            }
+            } else if (message.substr(0, 4) == "AUTH")  {
 
-            if (message.substr(0, 4) == "AUTH") 
-            {
                 std::istringstream iss(message.substr(5));
                 std::string login_input, password_input;
                 iss >> login_input >> password_input;
                 std::cout << "login: " << login_input << ", Password: " << password_input << std::endl;
-                if (findUser(login_input) == hashPassword(password_input)) 
-                {
+                
+                if (findUser(login_input) == hashPassword(password_input)) {
+
                     authorized = true;
                     login = login_input;
-                    {
-                        std::lock_guard<std::mutex> lock(clientsMutex);
-                        clientLogins[clientSocket] = login;
-                    }
+                    
+                    std::lock_guard<std::mutex> lock(clientsMutex);
+                    clientLogins[clientSocket] = login;
+                    
                     send(clientSocket, "AUTH_SUCCESS", 12, 0);
                     std::cout << "Client authenticated: " << login_input << std::endl;
+                    for (const auto& msg : allMessages) {
+                    if (send(clientSocket, msg.c_str(), msg.size(), 0) < 0) {
+                        std::cerr << "Failed to send history to " << login << std::endl;
+                        closeClients(clientSocket);
+                        return;
+                        }
+                    }
+                    for (const auto& msg : privateMessages[login]) {
+                        if (send(clientSocket, msg.c_str(), msg.size(), 0) < 0) {
+                            std::cerr << "Failed to send private history to " << login << std::endl;
+                            closeClients(clientSocket);
+                            return;
+                        }
+                    }
                 } else {
                     send(clientSocket, "AUTH_FAILED", 11, 0);
                 }
             } else {
+
                 send(clientSocket, "I'm expecting AUTH", 18, 0);
             }
         } else {
-            if (message.substr(0, 3) == "ALL") 
-            {
+            if (message.substr(0, 3) == "ALL") {
+
                 std::string content = "[" + login + "] " + message.substr(4);
                 broadcastMessage(content, clientSocket);
+
             } else if (message.substr(0, 7) == "PRIVATE") {
+
                 std::istringstream iss(message.substr(8));
-                std::string sender, receiver, content;
+                std::string login, receiver, content;
                 iss >> receiver;
                 std::getline(iss, content);
                 content = content.empty() ? "" : content.substr(1);
-                privateMessage(sender, receiver, content, clientSocket);
+                privateMessage(login, receiver, content, clientSocket);
+
+            } else if (message == "GET_USERS") {
+
+                auto users = getUserList();
+                std::string userList = "USERS ";
+                for (const auto& user : users) userList += user + " ";
+                send(clientSocket, userList.c_str(), userList.size(), 0);
+        
+            } else if (message == "EXIT") {
+
+                std::cout << "Client " << login << " requested to exit." << std::endl;
+                closeClients(clientSocket);
+                return;
             } else {
-                send(clientSocket, "Please authenticate first", 24, 0);
+                send(clientSocket, "Unknown command", 15, 0);
             }
         }
-        
-        if (message == "GET_USERS") {
-            auto users = getUserList();
-            std::string userList = "USERS ";
-            for (const auto& user : users) userList += user + " ";
-            send(clientSocket, userList.c_str(), userList.size(), 0);
-        }
-    }
+    }    
 }
 
 void Server::closeClients(int clientSocket) 
 {
-    #ifdef _WIN32
-        std::lock_guard<std::mutex> lock(clientsMutex);
-        auto it = std::find(clientSockets.begin(), clientSockets.end(), clientSocket);
-        
-        if (it != clientSockets.end()) {
-            clientSockets.erase(it);
-            clientLogins.erase(clientSocket);
-            closesocket(clientSocket);
-            std::cout << "Client disconnected" << std::endl;
-        }
-    #endif
-
     std::lock_guard<std::mutex> lock(clientsMutex);
     auto it = std::find(clientSockets.begin(), clientSockets.end(), clientSocket);
         
     if (it != clientSockets.end()) {
         clientSockets.erase(it);
         clientLogins.erase(clientSocket);
-        close(clientSocket);
+        #ifdef _WIN32
+            closesocket(clientSocket);
+        #else
+            close(clientSocket);
+        #endif
         std::cout << "Client disconnected" << std::endl;
     }
 }
 
 void Server::broadcastMessage(const std::string& message, int senderSocket) 
 {
+    std::time_t now = std::time(nullptr);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&now), "[%Y-%m-%d %H:%M:%S] ") << message;
+    std::string timestampedMessage = ss.str();
+    allMessages.push_back(timestampedMessage);
+
     std::lock_guard<std::mutex> lock(clientsMutex);
 
     for (int socket : clientSockets) {
         if (socket != senderSocket) {
-            if(send(socket, message.c_str(), message.size(), 0) < 0) {
+            if(send(socket, timestampedMessage.c_str(), timestampedMessage.size(), 0) < 0) {
                 std::cerr << "Error sending message to client " << socket << std::endl;
                 closeClients(socket);
             }
         }
     }
 
-    std::cout << "Broadcasted message: " << message << std::endl;
+    std::cout << "Broadcasted message: " << timestampedMessage << std::endl;
 }
 
 void Server::privateMessage(const std::string& sender, const std::string& receiver, 
                    const std::string& content, int senderSocket) 
 {
-    std::string message = "[" + sender + " ->" + receiver + "]: " + content;
+    std::time_t now = std::time(nullptr);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&now), "[%Y-%m-%d %H:%M:%S] ") << "[" << sender << " ->" << receiver << "]: " << content;
+    std::string message = ss.str();
+    privateMessages[receiver].push_back(message);
     std::lock_guard<std::mutex> lock(clientsMutex);
 
     for (const auto& pair : clientLogins) {
@@ -215,10 +246,10 @@ void Server::privateMessage(const std::string& sender, const std::string& receiv
                 closeClients(senderSocket);
             }
             std::cout << "Private message sent from " << sender << " to " << receiver << std::endl;
-            privateMessages[receiver].push_back(message);
             return;
         }
     }
+    privateMessages[sender].push_back(message);
     send(senderSocket, "User not found", 14, 0);
 }
 
