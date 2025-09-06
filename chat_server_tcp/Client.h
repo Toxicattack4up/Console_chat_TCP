@@ -25,11 +25,13 @@ private:
     static const size_t BUFFER_SIZE = 2048;
     
 public:
-    void registerClient(const std::string& login, const std::string& password, std::string& name);
+    Client();
+    ~Client();
+    bool sendRegister(const std::string& login, const std::string& password, const std::string& name);
     void connectToServer(const std::string& ip_to_server);
-    void isConnectToServer();
-    void getListOfUsers();
-    bool sendAUTH(std::string& login, std::string& password);
+    void isConnected();
+    std::vector<std::string> getListOfUsers();
+    bool sendAUTH(const std::string& login, const std::string& password);
     bool sendToAll(const std::string& message);
     void sendPrivate(const std::string& sender, const std::string& receiver, const std::string& message);
     void receiveMessages();
