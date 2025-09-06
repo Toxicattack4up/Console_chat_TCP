@@ -1,10 +1,13 @@
 #include "Server.h"
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 Server::Server() 
 {
+    #ifdef _WIN32
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) { std::cerr << "Winsock error"; exit(1); }
+    #endif
+
     sock = socket(AF_INET, SOCK_STREAM, 0);
 
     if (sock < 0) {
@@ -30,10 +33,16 @@ Server::Server()
 
 Server::~Server() 
 {
-    std::lock_guard<std::mutex> lock(clientsMutex);
-    close(sock);
-    for (int s : clientSockets) close(s);
-    std::cout << "Server shutdown" << std::endl;
+    #ifdef _WIN32
+        closesocket(sock);
+        for (int s : clientSockets) closesocket(s);
+        WSACleanup();
+    #else
+        close(sock);
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        for (int s : clientSockets) close(s);
+        std::cout << "Server shutdown" << std::endl;
+    #endif    
 }
 
 void Server::run() 
@@ -46,9 +55,8 @@ void Server::run()
         socklen_t clientSize = sizeof(clientAddr);
         int clientSocket = accept(sock, (struct sockaddr*)&clientAddr, &clientSize);
         
-        if (clientSocket < 0) 
-        {
-            std::cerr << "Failed to accept client connect" << std::endl;
+        if (clientSocket < 0) {
+            std::cerr << "Failed to accept client connection" << std::endl;
             continue;
         }
         
@@ -84,13 +92,30 @@ void Server::handleClient(int clientSocket)
 
         if (!authorized) 
         {
+            if (message.substr(0, 8) == "REGISTER")
+            {
+                std::istringstream iss(message.substr(9));
+                std::string login_input, password_input, name_input;
+                iss >> login_input >> password_input;
+                getline(iss, name_input);
+                name_input = name_input.empty() ? "" : name_input.substr(1);
+                if(findUser(login_input).empty()) 
+                {
+                    addUser(login_input, password_input, name_input);
+                    send(clientSocket, "REGISTER_SUCCESS", 16, 0);
+                    std::cout << "Client registered: " << login_input << std::endl;
+                } else {
+                    send(clientSocket, "REGISTER_FAILED", 15, 0);
+                }
+            }
+
             if (message.substr(0, 4) == "AUTH") 
             {
                 std::istringstream iss(message.substr(5));
                 std::string login_input, password_input;
                 iss >> login_input >> password_input;
                 std::cout << "login: " << login_input << ", Password: " << password_input << std::endl;
-                if (findUser(login_input) == password_input) 
+                if (findUser(login_input) == hashPassword(password_input)) 
                 {
                     authorized = true;
                     login = login_input;
@@ -114,7 +139,7 @@ void Server::handleClient(int clientSocket)
             } else if (message.substr(0, 7) == "PRIVATE") {
                 std::istringstream iss(message.substr(8));
                 std::string sender, receiver, content;
-                iss >> sender >> receiver;
+                iss >> receiver;
                 std::getline(iss, content);
                 content = content.empty() ? "" : content.substr(1);
                 privateMessage(sender, receiver, content, clientSocket);
@@ -122,11 +147,30 @@ void Server::handleClient(int clientSocket)
                 send(clientSocket, "Please authenticate first", 24, 0);
             }
         }
+        
+        if (message == "GET_USERS") {
+            auto users = getUserList();
+            std::string userList = "USERS ";
+            for (const auto& user : users) userList += user + " ";
+            send(clientSocket, userList.c_str(), userList.size(), 0);
+        }
     }
 }
 
 void Server::closeClients(int clientSocket) 
 {
+    #ifdef _WIN32
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        auto it = std::find(clientSockets.begin(), clientSockets.end(), clientSocket);
+        
+        if (it != clientSockets.end()) {
+            clientSockets.erase(it);
+            clientLogins.erase(clientSocket);
+            closesocket(clientSocket);
+            std::cout << "Client disconnected" << std::endl;
+        }
+    #endif
+
     std::lock_guard<std::mutex> lock(clientsMutex);
     auto it = std::find(clientSockets.begin(), clientSockets.end(), clientSocket);
         
@@ -144,7 +188,10 @@ void Server::broadcastMessage(const std::string& message, int senderSocket)
 
     for (int socket : clientSockets) {
         if (socket != senderSocket) {
-            send(socket, message.c_str(), message.size(), 0);
+            if(send(socket, message.c_str(), message.size(), 0) < 0) {
+                std::cerr << "Error sending message to client " << socket << std::endl;
+                closeClients(socket);
+            }
         }
     }
 
@@ -159,9 +206,16 @@ void Server::privateMessage(const std::string& sender, const std::string& receiv
 
     for (const auto& pair : clientLogins) {
         if (pair.second == receiver) {
-            send(pair.first, message.c_str(), message.size(), 0);
-            send(senderSocket, message.c_str(), message.size(), 0);
+            if(send(pair.first, message.c_str(), message.size(), 0) < 0) {
+                std::cerr << "Error sending private message to " << receiver << std::endl;
+                closeClients(pair.first);
+            }
+            if (send(senderSocket, message.c_str(), message.size(), 0) < 0) {
+                std::cerr << "Error sending private message to sender" << std::endl;
+                closeClients(senderSocket);
+            }
             std::cout << "Private message sent from " << sender << " to " << receiver << std::endl;
+            privateMessages[receiver].push_back(message);
             return;
         }
     }
@@ -169,6 +223,10 @@ void Server::privateMessage(const std::string& sender, const std::string& receiv
 }
 
 void Server::addUser(const std::string& login, const std::string& password, const std::string& name) {
+    if(findUser(login) != "") {
+        std::cerr << "User already exists: " << login << std::endl;
+        return;
+    }
     std::string hashedPassword = hashPassword(password);
     credentials[login] = {hashedPassword, name};
     std::cout << "User added: " << login << std::endl;
