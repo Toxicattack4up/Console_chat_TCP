@@ -108,11 +108,19 @@ void Server::handleClient(int clientSocket)
                 if(findUser(login_input).empty()) {
 
                     addUser(login_input, password_input, name_input);
-                    send(clientSocket, "REGISTER_SUCCESS", 16, 0);
+                    if (send(clientSocket, "REGISTER_SUCCESS", 16, 0) < 0) {
+                        std::cerr << "Error sending REGISTER_SUCCESS to client" << std::endl;
+                        closeClients(clientSocket);
+                        return;
+                    }
                     std::cout << "Client registered: " << login_input << std::endl;
 
                 } else {
-                    send(clientSocket, "REGISTER_FAILED", 15, 0);
+                    if (send(clientSocket, "REGISTER_FAILED", 15, 0) < 0) {
+                        std::cerr << "Error sending REGISTER_FAILED to client" << std::endl;
+                        closeClients(clientSocket);
+                        return;
+                    }
                 }
             } else if (message.substr(0, 4) == "AUTH")  {
 
@@ -129,8 +137,14 @@ void Server::handleClient(int clientSocket)
                     std::lock_guard<std::mutex> lock(clientsMutex);
                     clientLogins[clientSocket] = login;
                     
-                    send(clientSocket, "AUTH_SUCCESS", 12, 0);
+                    if (send(clientSocket, "AUTH_SUCCESS", 12, 0) < 0) {
+                        std::cerr << "Error sending AUTH_SUCCESS to client" << std::endl;
+                        closeClients(clientSocket);
+                        return;
+                    }
+                    
                     std::cout << "Client authenticated: " << login_input << std::endl;
+                    
                     for (const auto& msg : allMessages) {
                     if (send(clientSocket, msg.c_str(), msg.size(), 0) < 0) {
                         std::cerr << "Failed to send history to " << login << std::endl;
@@ -146,11 +160,19 @@ void Server::handleClient(int clientSocket)
                         }
                     }
                 } else {
-                    send(clientSocket, "AUTH_FAILED", 11, 0);
+                    if (send(clientSocket, "AUTH_FAILED", 11, 0) < 0) {
+                        std::cerr << "Error sending AUTH_FAILED to client" << std::endl;
+                        closeClients(clientSocket);
+                        return;
+                    }
                 }
             } else {
 
-                send(clientSocket, "I'm expecting AUTH", 18, 0);
+                if (send(clientSocket, "I'm expecting AUTH", 18, 0) < 0) {
+                    std::cerr << "Error sending AUTH request to client" << std::endl;
+                    closeClients(clientSocket);
+                    return;
+                }
             }
         } else {
             if (message.substr(0, 3) == "ALL") {
@@ -161,7 +183,7 @@ void Server::handleClient(int clientSocket)
             } else if (message.substr(0, 7) == "PRIVATE") {
 
                 std::istringstream iss(message.substr(8));
-                std::string login, receiver, content;
+                std::string receiver, content;
                 iss >> receiver;
                 std::getline(iss, content);
                 content = content.empty() ? "" : content.substr(1);
@@ -172,7 +194,11 @@ void Server::handleClient(int clientSocket)
                 auto users = getUserList();
                 std::string userList = "USERS ";
                 for (const auto& user : users) userList += user + " ";
-                send(clientSocket, userList.c_str(), userList.size(), 0);
+                if (send(clientSocket, userList.c_str(), userList.size(), 0) < 0) {
+                    std::cerr << "Error sending user list to client" << std::endl;
+                    closeClients(clientSocket);
+                    return;
+                }
         
             } else if (message == "EXIT") {
 
@@ -180,7 +206,11 @@ void Server::handleClient(int clientSocket)
                 closeClients(clientSocket);
                 return;
             } else {
-                send(clientSocket, "Unknown command", 15, 0);
+                if (send(clientSocket, "Unknown command", 15, 0) < 0) {
+                    std::cerr << "Error sending Unknown command to client" << std::endl;
+                    closeClients(clientSocket);
+                    return;
+                }
             }
         }
     }    
@@ -233,6 +263,7 @@ void Server::privateMessage(const std::string& sender, const std::string& receiv
     ss << std::put_time(std::localtime(&now), "[%Y-%m-%d %H:%M:%S] ") << "[" << sender << " ->" << receiver << "]: " << content;
     std::string message = ss.str();
     privateMessages[receiver].push_back(message);
+    privateMessages[sender].push_back(message);
     std::lock_guard<std::mutex> lock(clientsMutex);
 
     for (const auto& pair : clientLogins) {
@@ -249,7 +280,6 @@ void Server::privateMessage(const std::string& sender, const std::string& receiv
             return;
         }
     }
-    privateMessages[sender].push_back(message);
     send(senderSocket, "User not found", 14, 0);
 }
 
