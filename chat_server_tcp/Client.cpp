@@ -15,7 +15,17 @@ Client::Client() {
 }
 
 Client::~Client() {
+    #ifdef _WIN32
+        if(clientSock != -1)
+            closesocket(clientSock);
+        WSACleanup();
+    #else
+        if(clientSock != -1)
+            close(clientSock);
+    #endif
 
+    running = false;
+    std::cout << "Client disconnected" << std::endl;
 }
 
 bool Client::sendRegister(const std::string& login, const std::string& password, const std::string& name) {
@@ -122,7 +132,7 @@ void Client::sendPrivate(const std::string& sender, const std::string& receiver,
 }
 void Client::receiveMessages() {
     std::cout << "The message reading stream is running" << std::endl;
-    char buffer[2048];
+    char buffer[BUFFER_SIZE];
     
     while (running) {
         memset(buffer, 0, sizeof(buffer));
@@ -153,5 +163,32 @@ void Client::stopReceivedMessage() {
 }
 
 void Client::disconnect() {
+    std::string exitMessage = "EXIT";
 
+    if(clientSock != -1 && running)
+    {
+        if (send(clientSock, exitMessage.c_str(), exitMessage.length(), 0) < 0) {
+            std::cerr << "Error sending exit message" << std::endl;
+        } else {
+            std::cout << "The exit message was sent successfully" << std::endl;
+        }
+    }  else {
+        std::cout << "Client socket is not connected" << std::endl;  
+    }
+    
+
+    #ifdef _WIN32
+        if(clientSock != -1)
+            closesocket(clientSock);
+        clientSock = -1;
+        WSACleanup();
+    #else
+        if(clientSock != -1)
+            close(clientSock);
+        clientSock = -1;
+    #endif
+
+    running = false;
+    isThreadRunning = false;
+    std::cout << "Client disconnected" << std::endl;
 }
