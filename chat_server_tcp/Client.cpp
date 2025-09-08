@@ -15,17 +15,8 @@ Client::Client() {
 }
 
 Client::~Client() {
-    #ifdef _WIN32
-        if(clientSock != -1)
-            closesocket(clientSock);
-        WSACleanup();
-    #else
-        if(clientSock != -1)
-            close(clientSock);
-    #endif
-
-    running = false;
-    std::cout << "Client disconnected" << std::endl;
+    disconnect();
+    std::cout << "Client destroyed" << std::endl;
 }
 
 bool Client::sendRegister(const std::string& login, const std::string& password, const std::string& name) {
