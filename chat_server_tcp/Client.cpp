@@ -3,7 +3,15 @@
 
 
 Client::Client() {
-
+    clientSock = -1;
+    
+    #ifdef _WIN32
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
+            std::cerr << "Failed to initialize Winsock" << std::endl;
+            exit(1);
+        }
+    #endif
 }
 
 Client::~Client() {
