@@ -8,6 +8,7 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include <unordered_map>
 
 #ifdef _WIN32
     #include <winsock2.h>
