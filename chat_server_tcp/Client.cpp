@@ -20,7 +20,26 @@ Client::~Client() {
 }
 
 bool Client::sendRegister(const std::string& login, const std::string& password, const std::string& name) {
-    
+    char buffer[BUFFER_SIZE];
+    std::string registerMessageToServer = "REGISTER " + login + " " + password +  " " + name;
+
+    if(registerMessageToServer.size() > BUFFER_SIZE - 50) {
+        std::cerr << "REGISTER message is too long" << std::endl;
+        return false;
+    }
+
+    if(clientSock != -1 && running) {
+        std::cerr << "Client is not connected" << std::endl;
+        return false;
+    } else {
+        std::cout << "Client is connected" << std::endl;
+    }
+
+    if(send(clientSock, registerMessageToServer.c_str(), registerMessageToServer.length(), 0) < 0){
+        std::cerr << "Error sending REGISTER message to server" << std::endl;
+        return false;
+    }
+    return true;
 }
 
 void Client::connectToServer(const std::string& ip_to_server)
@@ -58,7 +77,7 @@ void Client::isConnected() {
 }
 
 std::vector<std::string> Client::getListOfUsers() {
-
+    
 }
 
 bool Client::sendAUTH(const std::string& login, const std::string& password) {

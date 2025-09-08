@@ -98,7 +98,6 @@ void Server::handleClient(int clientSocket)
 
         if (!authorized) {
             if (message.substr(0, 8) == "REGISTER") {
-
                 std::istringstream iss(message.substr(9));
                 std::string login_input, password_input, name_input;
                 iss >> login_input >> password_input;
@@ -106,7 +105,6 @@ void Server::handleClient(int clientSocket)
                 name_input = name_input.empty() ? "" : name_input.substr(1);
 
                 if(findUser(login_input).empty()) {
-
                     addUser(login_input, password_input, name_input);
                     if (send(clientSocket, "REGISTER_SUCCESS", 16, 0) < 0) {
                         std::cerr << "Error sending REGISTER_SUCCESS to client" << std::endl;
@@ -123,14 +121,12 @@ void Server::handleClient(int clientSocket)
                     }
                 }
             } else if (message.substr(0, 4) == "AUTH")  {
-
                 std::istringstream iss(message.substr(5));
                 std::string login_input, password_input;
                 iss >> login_input >> password_input;
                 std::cout << "login: " << login_input << ", Password: " << password_input << std::endl;
                 
                 if (findUser(login_input) == hashPassword(password_input)) {
-
                     authorized = true;
                     login = login_input;
                     
