@@ -131,7 +131,8 @@ void Client::sendPrivate(const std::string& sender, const std::string& receiver,
     std::ostringstream ossPrivate;
     ossPrivate << "PRIVATE " << sender << " " << receiver << " " << message;
     std::string privateMessage = ossPrivate.str();
-    char buffer[1024];
+    char buffer[BUFFER_SIZE];
+
     if (send(clientSock, privateMessage.c_str(), privateMessage.length(), 0) < 0)
     {
         std::cerr << "Error send private message" << std::endl;
@@ -147,6 +148,7 @@ void Client::receiveMessages() {
     while (running) {
         memset(buffer, 0, sizeof(buffer));
         int rec = recv(clientSock, buffer, sizeof(buffer) - 1, 0);
+        
         if (rec <= 0) {
             std::cerr << "Error reading the message" << std::endl;
             disconnect();
