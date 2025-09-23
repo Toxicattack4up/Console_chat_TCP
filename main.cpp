@@ -2,8 +2,8 @@
 #include <iostream>
 #include "Menu.h"
 #include "Account.h"
-#include "./Client.cpp"
-#include "./Server.cpp"
+#include "chat_server_tcp/Client.cpp"
+#include "chat_server_tcp/Server.cpp"
 
 
 //Условия задачи, создать чат со следующими параметрами
