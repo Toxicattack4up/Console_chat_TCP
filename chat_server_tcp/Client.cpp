@@ -73,11 +73,46 @@ void Client::connectToServer(const std::string& ip_to_server)
 }
 
 void Client::isConnected() {
-
+    if(clientSock != -1 && running) {
+        std::cout << "Client is connected" << std::endl;
+    } else {
+        std::cout << "Client is not connected" << std::endl;
+    }
 }
 
 std::vector<std::string> Client::getListOfUsers() {
+    char buffer[BUFFER_SIZE];
+    std::string getUsersMessage = "GET_USERS";
+    std::vector<std::string> users;
+
+    if (send(clientSock, getUsersMessage.c_str(), getUsersMessage.length(), 0) < 0)
+    {
+        std::cerr << "Error send GET_USERS message to server" << std::endl;
+        return users;
+    }
     
+    int bytesRead = recv(clientSock, buffer, sizeof(buffer), 0);  
+    if (bytesRead <= 0) 
+    {  
+        std::cerr << "Error to connect server or breaking the connection";
+        return users;
+    }
+    buffer[bytesRead] = '\0';
+    std::string responce(buffer);
+    
+    if (responce.rfind("USERS ", 0) == 0) // Check if response starts with "USERS "
+    {
+        std::string usersList = responce.substr(6); // Extract the part after "USERS "
+        std::istringstream iss(usersList);
+        std::string user;
+        while (iss >> user) {
+            users.push_back(user);
+        }
+        return users;
+    } else {  
+        std::cerr << "Error responce\n" << std::endl;
+        return users; 
+    }
 }
 
 bool Client::sendAUTH(const std::string& login, const std::string& password) {
