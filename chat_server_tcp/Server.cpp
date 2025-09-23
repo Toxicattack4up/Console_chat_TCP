@@ -1,4 +1,13 @@
 #include "Server.h"
+#include <cerrno>
+#include <cstring>
+
+// send a single line (terminated with '\n') to make framing simple
+static bool send_line(int sock, const std::string &msg) {
+    std::string out = msg + "\n";
+    ssize_t r = send(sock, out.c_str(), out.size(), 0);
+    return r >= 0;
+}
 
 
 Server::Server() 
@@ -16,12 +25,18 @@ Server::Server()
         exit(1);
     }
 
+    // allow quick reuse of the address/port (avoid bind failures on restart)
+    int opt = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        std::cerr << "Warning: setsockopt(SO_REUSEADDR) failed: " << strerror(errno) << std::endl;
+    }
+
     Addr.sin_family = AF_INET;
     Addr.sin_addr.s_addr = INADDR_ANY;
     Addr.sin_port = htons(12345);
 
     if (bind(sock, (struct sockaddr*)&Addr, sizeof(Addr)) < 0) {
-        std::cerr << "Error: fail to bind socket to port" << std::endl;
+        std::cerr << "Error: fail to bind socket to port: " << strerror(errno) << std::endl;
         exit(1);
     }
 
@@ -92,7 +107,7 @@ void Server::handleClient(int clientSocket)
         std::string message(buffer);
 
         if(message.size() > BUFFER_SIZE - 50) {
-            send(clientSocket, "Message is too long", 16, 0);
+            send_line(clientSocket, "Message is too long");
             continue;
         }
 
@@ -106,7 +121,7 @@ void Server::handleClient(int clientSocket)
 
                 if(findUser(login_input).empty()) {
                     addUser(login_input, password_input, name_input);
-                    if (send(clientSocket, "REGISTER_SUCCESS", 16, 0) < 0) {
+                    if (!send_line(clientSocket, "REGISTER_SUCCESS")) {
                         std::cerr << "Error sending REGISTER_SUCCESS to client" << std::endl;
                         closeClients(clientSocket);
                         return;
@@ -114,13 +129,13 @@ void Server::handleClient(int clientSocket)
                     std::cout << "Client registered: " << login_input << std::endl;
 
                 } else {
-                    if (send(clientSocket, "REGISTER_FAILED", 15, 0) < 0) {
+                    if (!send_line(clientSocket, "REGISTER_FAILED")) {
                         std::cerr << "Error sending REGISTER_FAILED to client" << std::endl;
                         closeClients(clientSocket);
                         return;
                     }
                 }
-            } else if (message.substr(0, 4) == "AUTH")  {
+                } else if (message.substr(0, 4) == "AUTH")  {
                 std::istringstream iss(message.substr(5));
                 std::string login_input, password_input;
                 iss >> login_input >> password_input;
@@ -129,34 +144,21 @@ void Server::handleClient(int clientSocket)
                 if (findUser(login_input) == hashPassword(password_input)) {
                     authorized = true;
                     login = login_input;
-                    
-                    std::lock_guard<std::mutex> lock(clientsMutex);
-                    clientLogins[clientSocket] = login;
-                    
-                    if (send(clientSocket, "AUTH_SUCCESS", 12, 0) < 0) {
+
+                    {
+                        std::lock_guard<std::mutex> lock(clientsMutex);
+                        clientLogins[clientSocket] = login;
+                    }
+
+                    if (!send_line(clientSocket, "AUTH_SUCCESS")) {
                         std::cerr << "Error sending AUTH_SUCCESS to client" << std::endl;
                         closeClients(clientSocket);
                         return;
                     }
-                    
+
                     std::cout << "Client authenticated: " << login_input << std::endl;
-                    
-                    for (const auto& msg : allMessages) {
-                    if (send(clientSocket, msg.c_str(), msg.size(), 0) < 0) {
-                        std::cerr << "Failed to send history to " << login << std::endl;
-                        closeClients(clientSocket);
-                        return;
-                        }
-                    }
-                    for (const auto& msg : privateMessages[login]) {
-                        if (send(clientSocket, msg.c_str(), msg.size(), 0) < 0) {
-                            std::cerr << "Failed to send private history to " << login << std::endl;
-                            closeClients(clientSocket);
-                            return;
-                        }
-                    }
                 } else {
-                    if (send(clientSocket, "AUTH_FAILED", 11, 0) < 0) {
+                    if (!send_line(clientSocket, "AUTH_FAILED")) {
                         std::cerr << "Error sending AUTH_FAILED to client" << std::endl;
                         closeClients(clientSocket);
                         return;
@@ -164,7 +166,7 @@ void Server::handleClient(int clientSocket)
                 }
             } else {
 
-                if (send(clientSocket, "I'm expecting AUTH", 18, 0) < 0) {
+                if (!send_line(clientSocket, "I'm expecting AUTH")) {
                     std::cerr << "Error sending AUTH request to client" << std::endl;
                     closeClients(clientSocket);
                     return;
@@ -190,7 +192,7 @@ void Server::handleClient(int clientSocket)
                 auto users = getUserList();
                 std::string userList = "USERS ";
                 for (const auto& user : users) userList += user + " ";
-                if (send(clientSocket, userList.c_str(), userList.size(), 0) < 0) {
+                if (!send_line(clientSocket, userList)) {
                     std::cerr << "Error sending user list to client" << std::endl;
                     closeClients(clientSocket);
                     return;
@@ -201,8 +203,55 @@ void Server::handleClient(int clientSocket)
                 std::cout << "Client " << login << " requested to exit." << std::endl;
                 closeClients(clientSocket);
                 return;
+            } else if (message == "GET_HISTORY") {
+
+                // send only public history
+                std::vector<std::string> copyAll;
+                {
+                    std::lock_guard<std::mutex> dataLock(dataMutex);
+                    copyAll = allMessages;
+                }
+                for (const auto& msg : copyAll) {
+                    if (!send_line(clientSocket, msg)) {
+                        std::cerr << "Failed to send history to " << login << std::endl;
+                        closeClients(clientSocket);
+                        return;
+                    }
+                }
+                if (!send_line(clientSocket, std::string("END_OF_HISTORY"))) {
+                    std::cerr << "Failed to send history terminator to " << login << std::endl;
+                    closeClients(clientSocket);
+                    return;
+                }
+            } else if (message.rfind("GET_PRIVATE", 0) == 0) {
+                // format: GET_PRIVATE <otherUser>
+                std::istringstream iss(message.substr(12));
+                std::string other;
+                iss >> other;
+                std::vector<std::string> copyPrivate;
+                {
+                    std::lock_guard<std::mutex> dataLock(dataMutex);
+                    // collect messages where sender or receiver equals login and other
+                    auto itReq = privateMessages.find(login);
+                    if (itReq != privateMessages.end()) copyPrivate = itReq->second;
+                }
+                // filter messages that mention the other user in the "->" pattern
+                for (const auto& msg : copyPrivate) {
+                    if (msg.find("->" + other) != std::string::npos || msg.find("->" + login) != std::string::npos) {
+                        if (!send_line(clientSocket, msg)) {
+                            std::cerr << "Failed to send private history to " << login << std::endl;
+                            closeClients(clientSocket);
+                            return;
+                        }
+                    }
+                }
+                if (!send_line(clientSocket, std::string("END_OF_HISTORY"))) {
+                    std::cerr << "Failed to send history terminator to " << login << std::endl;
+                    closeClients(clientSocket);
+                    return;
+                }
             } else {
-                if (send(clientSocket, "Unknown command", 15, 0) < 0) {
+                if (!send_line(clientSocket, "Unknown command")) {
                     std::cerr << "Error sending Unknown command to client" << std::endl;
                     closeClients(clientSocket);
                     return;
@@ -235,16 +284,17 @@ void Server::broadcastMessage(const std::string& message, int senderSocket)
     std::stringstream ss;
     ss << std::put_time(std::localtime(&now), "[%Y-%m-%d %H:%M:%S] ") << message;
     std::string timestampedMessage = ss.str();
-    allMessages.push_back(timestampedMessage);
+    {
+        std::lock_guard<std::mutex> dataLock(dataMutex);
+        allMessages.push_back(timestampedMessage);
+    }
 
     std::lock_guard<std::mutex> lock(clientsMutex);
 
     for (int socket : clientSockets) {
-        if (socket != senderSocket) {
-            if(send(socket, timestampedMessage.c_str(), timestampedMessage.size(), 0) < 0) {
-                std::cerr << "Error sending message to client " << socket << std::endl;
-                closeClients(socket);
-            }
+        if(!send_line(socket, timestampedMessage)) {
+            std::cerr << "Error sending message to client " << socket << std::endl;
+            closeClients(socket);
         }
     }
 
@@ -258,25 +308,37 @@ void Server::privateMessage(const std::string& sender, const std::string& receiv
     std::stringstream ss;
     ss << std::put_time(std::localtime(&now), "[%Y-%m-%d %H:%M:%S] ") << "[" << sender << " ->" << receiver << "]: " << content;
     std::string message = ss.str();
-    privateMessages[receiver].push_back(message);
-    privateMessages[sender].push_back(message);
+    {
+        std::lock_guard<std::mutex> dataLock(dataMutex);
+        // store message for both participants; avoid duplicate storage when sending to self
+        privateMessages[receiver].push_back(message);
+        if (receiver != sender) privateMessages[sender].push_back(message);
+    }
     std::lock_guard<std::mutex> lock(clientsMutex);
-
+    bool delivered = false;
     for (const auto& pair : clientLogins) {
         if (pair.second == receiver) {
-            if(send(pair.first, message.c_str(), message.size(), 0) < 0) {
+            // send to receiver socket
+            if(!send_line(pair.first, message)) {
                 std::cerr << "Error sending private message to " << receiver << std::endl;
                 closeClients(pair.first);
             }
-            if (send(senderSocket, message.c_str(), message.size(), 0) < 0) {
-                std::cerr << "Error sending private message to sender" << std::endl;
-                closeClients(senderSocket);
-            }
-            std::cout << "Private message sent from " << sender << " to " << receiver << std::endl;
-            return;
+            delivered = true;
+            break;
         }
     }
-    send(senderSocket, "User not found", 14, 0);
+    // send to sender as well if receiver != sender and senderSocket is still open
+    if (receiver != sender) {
+        if (!send_line(senderSocket, message)) {
+            std::cerr << "Error sending private message to sender" << std::endl;
+            closeClients(senderSocket);
+        }
+    }
+    if (delivered) {
+        std::cout << "Private message sent from " << sender << " to " << receiver << std::endl;
+        return;
+    }
+    send_line(senderSocket, "User not found");
 }
 
 void Server::addUser(const std::string& login, const std::string& password, const std::string& name) {
@@ -285,12 +347,16 @@ void Server::addUser(const std::string& login, const std::string& password, cons
         return;
     }
     std::string hashedPassword = hashPassword(password);
-    credentials[login] = {hashedPassword, name};
+    {
+        std::lock_guard<std::mutex> dataLock(dataMutex);
+        credentials[login] = {hashedPassword, name};
+    }
     std::cout << "User added: " << login << std::endl;
 
 }
 
 std::string Server::findUser(const std::string& login) {
+    std::lock_guard<std::mutex> dataLock(dataMutex);
     auto it = credentials.find(login);
     if (it != credentials.end()) {
         return it->second.first;
@@ -300,6 +366,7 @@ std::string Server::findUser(const std::string& login) {
 
 std::vector<std::string> Server::getUserList() {
     std::vector<std::string> users;
+    std::lock_guard<std::mutex> dataLock(dataMutex);
     for (const auto& pair : credentials) {
         users.push_back(pair.first);
     }

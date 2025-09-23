@@ -31,6 +31,7 @@ private:
     std::unordered_map<std::string, std::pair<std::string, std::string>> credentials;
     std::vector<std::string> allMessages;
     std::map<std::string, std::vector<std::string>> privateMessages;
+    std::mutex dataMutex;
     int maxconnect = 10;
     static const size_t BUFFER_SIZE = 2048;
 
