@@ -88,13 +88,11 @@ void Client::connectToServer(const std::string& ip_to_server)
     if (connect(clientSock, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) == 0)
     {
         {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cout << "Connected to server" << std::endl;
+            logInfo("Connected to server");
         }
     } else {
         {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Error to connect server" << std::endl;
+            logError("Error to connect server");
         }
         exit(1);
     }
@@ -175,8 +173,7 @@ bool Client::sendAUTH(const std::string& login, const std::string& password) {
     if (responce.rfind(authOk, 0) == 0)
     {
         {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cout << "Responce server: " << authOk << std::endl;
+            logInfo(std::string("Response server: ") + authOk);
             // If server sent additional data after AUTH_SUCCESS (e.g. history), print it now
             if (responce.size() > authOk.size()) {
                 std::string rest = responce.substr(authOk.size());
@@ -187,14 +184,12 @@ bool Client::sendAUTH(const std::string& login, const std::string& password) {
         return true;
     } else if (responce == "AUTH_FAILED") {  
         {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Error responce\n" << std::endl;
+            logError("AUTH_FAILED response from server");
         }
         return false; 
     } else {
         {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Error responce\n" << std::endl;
+            logError("Unknown response from server during AUTH");
         }
         return false;
     }
@@ -206,8 +201,7 @@ bool Client::sendToAll(const std::string& message) {
     oss << "ALL " << message;
     std::string messageToAll = oss.str();
     if (send(clientSock, messageToAll.c_str(), messageToAll.length(), 0) < 0) {
-        std::lock_guard<std::mutex> lock(io_mutex);
-        std::cerr << "Error sending message to all" << std::endl;
+        logError("Error sending message to all");
         return false;
     }
     return true;
@@ -221,13 +215,10 @@ void Client::sendPrivate(const std::string& sender, const std::string& receiver,
 
     if (send(clientSock, privateMessage.c_str(), privateMessage.length(), 0) < 0)
     {
-        {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Error send private message" << std::endl;
-        }
+        logError("Error send private message");
         return;
     } else {
-        // Do not print success here; server will broadcast/forward the message and client will receive it.
+        // success will be observed when the server forwards message back to clients
     }
 }
 void Client::receiveMessages() {
@@ -241,11 +232,9 @@ void Client::receiveMessages() {
             // If we've already initiated disconnect, exit quietly
             if (!running) break;
             if (rec == 0) {
-                std::lock_guard<std::mutex> lock(io_mutex);
-                std::cout << "Server closed connection" << std::endl;
+                logInfo("Server closed connection");
             } else {
-                std::lock_guard<std::mutex> lock(io_mutex);
-                std::cerr << "Error reading the message" << std::endl;
+                logError("Error reading the message");
             }
             disconnect();
             break;
@@ -288,8 +277,7 @@ void Client::receiveMessages() {
             } else {
                 // live message: print and add to recent buffer
                 {
-                    std::lock_guard<std::mutex> lock(io_mutex);
-                    std::cout << line << std::endl;
+                    logInfo(line);
                 }
                 {
                     std::lock_guard<std::mutex> rlock(recent_mutex);
