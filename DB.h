@@ -2,6 +2,7 @@
 #include <string>
 #include <mutex>
 #include <vector>
+#include <iostream>
 
 class DB {
 public:
@@ -13,7 +14,7 @@ public:
     //получение списка сообщений
     std::vector<std::string> getMessages(const std::string& user1, const std::string& user2);
 
-
+    int getUserId(const std::string& login);
     //добавление пользователя в БД
     void addUser(const std::string& login, const std::string& password, const std::string& name);
     //проверка пользователя в БД
@@ -23,12 +24,13 @@ public:
     //получение списка пользователей
     std::vector<std::string> getUserList();
 
-    
+
     //Логирование действий
     void logAction(const std::string& action);
 
 private:
     sqlite3* db;
     std::mutex dbMutex;
+
     
 };

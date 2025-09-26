@@ -11,8 +11,55 @@ DB::~DB() {
     sqlite3_close(db);
 }
 
-void DB::addMessage(const std::string& sender, const std::string& receiver, const std::string& content) {
+int callback(void *NotUsed, int argc, char **argv, char **azColName) {
+    for(int i = 0; i < argc; i++) {
+        std::cout << azColName[i] << ": " << (argv[i] ? argv[i] : "NULL") << std::endl;
+    }
+    std::cout << std::endl;
+    return 0;
+}
+
+int DB::getUserId(const std::string& login) {
+    char* errMsg;
+    std::lock_guard<std::mutex> lock(dbMutex);
+
+    std::string sql = "SELECT id FROM users WHERE login = ?;";
+    sqlite3_stmt *stmt;
+    char text = sqlite3_exec(db, sql.c_str(), callback, 0, &errMsg);
+    if (text != SQLITE_OK)
+    {
+        std::cerr << "Error " << errMsg << std::endl;
+        sqlite3_free(errMsg); 
+    } else {
+        std::cout << "Все найс едем дальше" << std::endl;
+    }
     
+    //sqlite3_prepare_v2(sqlite3*, const char *zSql, int nByte, sqlite3_stmt **ppStmt, const char **pzTail);
+    /*if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        throw std::runtime_error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db)));
+    }
+
+    sqlite3_bind_text(stmt, 1, login.c_str(), -1, SQLITE_STATIC);
+
+    int userId = -1;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        userId = sqlite3_column_int(stmt, 0);
+    }
+
+    sqlite3_finalize(stmt);*/
+}
+
+void DB::addMessage(const std::string& sender, const std::string& receiver, const std::string& content) {
+    std::lock_guard<std::mutex> lock(dbMutex);
+
+    std::string sql = "INSERT INTO messages (user_id, receiver_id, message, timestamp) VALUES (?, ?, ?, datetime('now'));";
+    sqlite3_stmt *stmt;
+    
+    if (!receiver.empty()) {
+        sql = "INSERT INTO messages (user_id, receiver_id, message, timestamp) VALUES (?, (SELECT id FROM users WHERE login = ?), ?, datetime('now'));";
+    } else {
+        sql = "INSERT INTO messages (user_id, message, timestamp) VALUES ((SELECT id FROM users WHERE login = ?), ?, datetime('now'));";
+    }
 }
 
 std::vector<std::string> DB::getMessages(const std::string& user1, const std::string& user2) {
