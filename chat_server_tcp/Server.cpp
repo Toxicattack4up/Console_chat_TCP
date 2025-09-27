@@ -2,6 +2,7 @@
 #include <cerrno>
 #include <cstring>
 #include "../common.h"
+#include <../DB.h>
 
 // send a single line (terminated with '\n') to make framing simple
 static bool send_line(int sock, const std::string &msg) {
@@ -99,7 +100,7 @@ void Server::handleClient(int clientSocket)
         int rec = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
         
         if (rec <= 0) {
-                logInfo(std::string("Client disconnected: ") + (authorized ? login : std::to_string(clientSocket)));
+            logInfo(std::string("Client disconnected: ") + (authorized ? login : std::to_string(clientSocket)));
             closeClients(clientSocket);
             return;
         }

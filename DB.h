@@ -27,13 +27,10 @@ public:
     //получение списка пользователей
     std::vector<std::string> getUserList();
 
-
     //Логирование действий
     void logAction(const std::string& action);
 
 private:
     sqlite3* db;
     std::mutex dbMutex;
-
-    
 };
