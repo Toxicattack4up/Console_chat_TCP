@@ -14,7 +14,7 @@ public:
 
     //фиксация сообщения в БД
     void addMessage(const std::string& sender, const std::string& receiver, const std::string& content);
-    //получение списка сообщений
+    //получение списка сообщений общего чата
     std::vector<std::string> getMessages(const std::string& user1, const std::string& user2);
 
     int getUserId(const std::string& login);
