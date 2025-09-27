@@ -2,6 +2,7 @@
 #include <iostream>
 #include "Menu.h"
 #include "Account.h"
+#include "DB.h"
 #include "chat_server_tcp/Client.h"
 #include "chat_server_tcp/Server.h"
 
@@ -25,11 +26,24 @@ int main() {
     //    std::cerr << "Ошибка: не удалось установить кодировку ввода на UTF-8." << std::endl;
     //    return 1;
     //}
-    Client client;
-    Account account;
-    Menu menu;
-    client.connectToServer("127.0.0.1");
-    menu.RunMenu(client);
+    //Client client;
+    //Account account;
+    //Menu menu;
+    //client.connectToServer("127.0.0.1");
+    //menu.RunMenu(client);
+
+    DB db("tcp_chat.db");
+    //db.getUserId("peter_scott");
+    std::string login = "Giatler";
+    std::string name = "Гитлер";
+    std::string password = "1488";
+    db.addUser(login, name, password);
+    /*db.addUser("ivan_ivanov", "Gennadiy", "54321");
+    db.addUser("maria_smirnova", "Мария Смирнова", "qwerty");
+    db.addUser("alexey_petrov", "Алексей Петров", "password");
+    db.addUser("elena_kuznetsova", "Елена Кузнецова", "letmein");*/
+
+
 
     return 0;
 }

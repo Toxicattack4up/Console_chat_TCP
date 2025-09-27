@@ -3,10 +3,13 @@
 #include <mutex>
 #include <vector>
 #include <iostream>
+#include <functional>
+#include <sstream>
 
 class DB {
 public:
     DB(const std::string& db_name);
+    DB() = default;
     ~DB();
 
     //фиксация сообщения в БД
