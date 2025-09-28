@@ -1,5 +1,4 @@
 #include "Chat.h"
-#include <iostream>
 
 Chat::Chat() {
 }

@@ -11,8 +11,8 @@
 #include <unordered_map>
 #include <cerrno>
 #include <cstring>
-#include "../common.h"
-#include "../DB.h"
+#include "../include/common.h"
+#include "Database.h"
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -34,7 +34,7 @@ private:
     std::map<int, std::string> clientLogins;
     int maxconnect = 10;
     static const size_t BUFFER_SIZE = 2048;
-    DB db;
+    ChatDB db;
 
 public:
     Server();

@@ -1,11 +1,7 @@
-#include "common.h"
+#include "../include/common.h"
 
 std::mutex io_mutex;
 
-#include <fstream>
-#include <sstream>
-#include <chrono>
-#include <iomanip>
 
 static std::mutex log_mutex;
 
@@ -27,14 +23,14 @@ static void writeLog(const std::string &level, const std::string &msg) {
 }
 
 void logInfo(const std::string &msg) {
-	writeLog("INFO", msg);
 	std::lock_guard<std::mutex> lock(io_mutex);
+	writeLog("INFO", msg);
 	std::cout << msg << std::endl;
 }
 
 void logError(const std::string &msg) {
-	writeLog("ERROR", msg);
 	std::lock_guard<std::mutex> lock(io_mutex);
+	writeLog("ERROR", msg);
 	std::cerr << msg << std::endl;
 }
 

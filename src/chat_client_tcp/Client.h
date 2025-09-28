@@ -9,6 +9,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <sstream>
+#include "../include/common.h"
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -32,27 +33,27 @@ private:
     std::vector<std::string> historyLines;
     std::mutex history_mutex;
     std::condition_variable history_cv;
-        // private history response
-        bool waitingForPrivateHistory = false;
-        std::vector<std::string> privateHistoryLines;
-        std::mutex private_history_mutex;
-        std::condition_variable private_history_cv;
-    // GET_USERS synchronization
+    
+    bool waitingForPrivateHistory = false;
+    std::vector<std::string> privateHistoryLines;
+    std::mutex private_history_mutex;
+    std::condition_variable private_history_cv;
+    
     bool waitingForUsers = false;
     std::string usersResponse;
     std::mutex users_mutex;
     std::condition_variable users_cv;
-    // Recent messages buffer to avoid printing duplicates when showing history
+    
     std::deque<std::string> recentMessages;
     std::mutex recent_mutex;
     size_t recentLimit = 100;
-    // buffer for partial incoming data
+    
     std::string incomingBuffer;
     
 public:
     Client();
     ~Client();
-    bool sendRegister(const std::string& login, const std::string& password, const std::string& name);
+    bool sendRegister(const std::string& login, const std::string& username, const std::string& password);
     void connectToServer(const std::string& ip_to_server);
     void isConnected();
     std::vector<std::string> getListOfUsers();

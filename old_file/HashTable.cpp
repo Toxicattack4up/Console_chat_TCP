@@ -1,8 +1,4 @@
 #include "HashTable.h"
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <filesystem>
 
 namespace fs = std::filesystem;
 

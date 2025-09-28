@@ -170,39 +170,28 @@ void Server::handleAuthorizedClient(int clientSocket, const std::string& login,
 
 void Server::handleRegistration(int clientSocket, const std::string& message) {
     std::istringstream iss(message.substr(9));
-    std::string login_input, password_input, name_input;
-    iss >> login_input >> password_input;
-    std::getline(iss, name_input);
-    name_input = name_input.empty() ? login_input : name_input.substr(1);
-
-    // Валидация
-    if (login_input.empty() || password_input.empty()) {
-        send_line(clientSocket, "REGISTER_FAILED: Login and password required");
+    std::string login, name, password;
+    iss >> login >> name >> password;
+    std::getline(iss, name);
+    
+    if (login.empty() || name.empty() || password.empty()) {
+        send_line(clientSocket, "REGISTER_FAILED: All fields required");
         return;
     }
 
-    if (login_input.length() < 3 || password_input.length() < 3) {
+    if (login.length() < 3 || password.length() < 3) {
         send_line(clientSocket, "REGISTER_FAILED: Login and password must be at least 3 characters");
         return;
     }
 
-    // Проверка существования пользователя
-    if (db.getUserId(login_input) != -1) {
-        send_line(clientSocket, "REGISTER_FAILED: User already exists");
-        db.logAction("Попытка регистрации существующего логина: " + login_input);
+    if (db.getUserId(login) != -1) {
+        send_line(clientSocket, "REGISTER_FAILED: Login already exists");
         return;
     }
 
-    // Регистрация
-    db.addUser(login_input, name_input, password_input);
-    
-    if (send_line(clientSocket, "REGISTER_SUCCESS")) {
-        logInfo("Client registered: " + login_input);
-        db.logAction("Клиент зарегистрирован: " + login_input);
-    } else {
-        logError("Error sending REGISTER_SUCCESS to client");
-        closeClients(clientSocket);
-    }
+    db.addUser(login, name, password);
+    send_line(clientSocket, "REGISTER_SUCCESS");
+    db.logAction("Зарегистрирован новый пользователь: " + login);
 }
 
 void Server::handleAuthorization(int clientSocket, const std::string& message, 
@@ -293,7 +282,7 @@ void Server::handleClientExit(int clientSocket, const std::string& login) {
 
 void Server::handleGetHistory(int clientSocket, const std::string& login) {
     // Получаем историю общего чата из базы
-    auto history = db.getMessages("", "");
+    auto history = db.getPublicMessages();
     
     for (const auto& msg : history) {
         if (!send_line(clientSocket, msg)) {

@@ -1,0 +1,30 @@
+# Сборка
+build/
+*.exe
+*.out
+*.app
+
+# Базы данных
+*.db
+*.sqlite
+*.db-journal
+
+# Логи
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Компиляция
+*.o
+*.a
+*.so
+*.dll

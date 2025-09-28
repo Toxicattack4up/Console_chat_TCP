@@ -1,6 +1,4 @@
 #include "Account.h"
-#include <iostream>
-#include <string>
 
 Account::Account() : login(""), password(""), name("") {
 }

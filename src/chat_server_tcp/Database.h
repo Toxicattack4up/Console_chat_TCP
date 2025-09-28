@@ -1,3 +1,4 @@
+#pragma once
 #include <sqlite3.h>
 #include <string>
 #include <mutex>
@@ -6,13 +7,13 @@
 #include <functional>
 #include <sstream>
 
-class DB {
+class ChatDB {
 public:
-    DB(const std::string& db_name);
-    DB() = delete;
-    DB(const DB&) = delete;
-    DB& operator=(const DB&) = delete;
-    ~DB();
+    ChatDB(const std::string& ChatDB_name);
+    ChatDB() = delete;
+    ChatDB(const ChatDB&) = delete;
+    ChatDB& operator=(const ChatDB&) = delete;
+    ~ChatDB();
 
     
     void addMessage(const std::string& sender, const std::string& receiver, const std::string& content); //фиксация сообщения в БД
@@ -34,5 +35,5 @@ public:
 
 private:
     sqlite3* db = nullptr;
-    std::mutex dbMutex;
+    std::mutex ChatDBMutex;
 };

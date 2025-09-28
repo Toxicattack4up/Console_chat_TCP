@@ -1,8 +1,9 @@
-#ifndef HASHTABLE_H
-#define HASHTABLE_H
-
 #include <string>
 #include <utility>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <filesystem>
 
 class HashTable {
 private:
@@ -20,5 +21,3 @@ public:
     void saveToFile(const std::string& filename) const;
     void loadFromFile(const std::string& filename);
 };
-
-#endif // HASHTABLE_H

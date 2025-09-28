@@ -1,7 +1,4 @@
-
 #include "Client.h"
-#include "../common.h"
-
 
 Client::Client() {
     clientSock = -1;

@@ -122,8 +122,7 @@ bool Menu::handleLogin(Client& client) {
     }
 }
 
-bool Menu::handleRegistration() {
-    // Запрашиваем логин
+bool Menu::handleRegistration(Client& client) {
     std::string login = ReadLineLocked("Введите логин: ");
     if (login.empty()) {
         std::lock_guard<std::mutex> lock(io_mutex);
@@ -131,14 +130,21 @@ bool Menu::handleRegistration() {
         return false;
     }
 
-    // Проверяем, что логин не содержит пробелы
     if (login.find(' ') != std::string::npos) {
         std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Логин не должен содержать пробелы!" << std::endl;
         return false;
     }
 
-    // Запрашиваем пароль
+    std::string name = ReadLineLocked("Введите имя (или нажмите Enter, чтобы использовать логин): ");
+    if (name.empty()) {
+        name = login; // Если имя не введено, используем логин
+    } else if (name.find(' ') != std::string::npos) {
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cout << "Имя не должно содержать пробелы!" << std::endl;
+        return false;
+    }
+
     std::string password = ReadLineLocked("Введите пароль: ");
     if (password.empty()) {
         std::lock_guard<std::mutex> lock(io_mutex);
@@ -146,8 +152,7 @@ bool Menu::handleRegistration() {
         return false;
     }
 
-    // Отправляем запрос на регистрацию через клиент
-    if (client.sendREG(login, password)) {
+    if (client.sendRegister(login, name, password)) {
         std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Регистрация успешна!" << std::endl;
         return true;
@@ -317,7 +322,7 @@ int Menu::RunMenu(Client& client) {
                 }
                 break;
             case 2:
-                if (handleRegistration()) {
+                if (handleRegistration(client)) {
                     std::lock_guard<std::mutex> lock(io_mutex);
                     std::cout << "Регистрация успешна! Теперь войдите в систему." << std::endl;
                 }

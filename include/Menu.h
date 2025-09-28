@@ -1,12 +1,11 @@
 #pragma once
 #include <string>
 #include <vector>
-#include "chat_server_tcp/Client.h"
+#include "../src/chat_client_tcp/Client.h"
 
 class Menu {
 private:
     std::string current_user;
-    Client client;
     
     // Приватные методы для организации кода
     void displayMainMenu();
@@ -17,7 +16,7 @@ private:
     
     // Основные обработчики
     bool handleLogin(Client& client);
-    bool handleRegistration();
+    bool handleRegistration(Client& client);
     void handlePrivateChat(Client& client);
     void handlePublicChat(Client& client);
     std::string selectUserFromList(const std::vector<std::string>& users);
