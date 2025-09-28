@@ -14,10 +14,10 @@ public:
     DB& operator=(const DB&) = delete;
     ~DB();
 
-    //фиксация сообщения в БД
-    void addMessage(const std::string& sender, const std::string& receiver, const std::string& content);
-    //получение списка сообщений общего чата
-    std::vector<std::string> getMessages(const std::string& user1, const std::string& user2);
+    
+    void addMessage(const std::string& sender, const std::string& receiver, const std::string& content); //фиксация сообщения в БД
+    std::vector<std::string> getMessages(const std::string& user1, const std::string& user2); //получение списка сообщений общего чата
+    std::vector<std::string> getPublicMessages(); //сообщения общего чата
 
     int getUserId(const std::string& login);
     //добавление пользователя в БД

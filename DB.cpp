@@ -114,6 +114,7 @@ void DB::addMessage(const std::string& sender, const std::string& receiver, cons
 }
 
 std::vector<std::string> DB::getMessages(const std::string& user1, const std::string& user2) {
+    if (user1.empty() || user2.empty()) return {};
     std::lock_guard<std::mutex> lock(dbMutex);
     std::vector<std::string> messages;
     sqlite3_stmt *stmt;
@@ -156,6 +157,37 @@ std::vector<std::string> DB::getMessages(const std::string& user1, const std::st
     return messages;
 }
 
+std::vector<std::string> DB::getPublicMessages() {
+    std::lock_guard<std::mutex> lock(dbMutex);
+    std::vector<std::string> messages;
+    sqlite3_stmt *stmt;
+
+    const char* sql = "SELECT u.login as sender, m.message, m.timestamp \
+                      FROM messages m \
+                      JOIN users u ON u.id = m.user_id \
+                      WHERE m.receiver_id IS NULL \
+                      ORDER BY m.timestamp ASC";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "Ошибка подготовки: " << sqlite3_errmsg(db) << std::endl;
+        return {};
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* sender = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        const char* message = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        const char* timestamp = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+
+        if (sender && message && timestamp) {
+            messages.push_back(std::string("[") + timestamp + "] " + sender + ": " + message);
+        }
+    }
+
+    sqlite3_finalize(stmt);
+    logAction("Получили историю общего чата");
+    return messages;
+}
+
 void DB::addUser(const std::string& login, const std::string& name, const std::string& password) {
     std::lock_guard<std::mutex> lock(dbMutex);
     sqlite3_stmt *stmt;
@@ -172,12 +204,12 @@ void DB::addUser(const std::string& login, const std::string& name, const std::s
         std::cerr << "Ошибка подготовки: " << sqlite3_errmsg(db) << std::endl;
         return;
     }
-    std::cout << "Выполнили подготовку строки с сырым значением" << std::endl;
+    //std::cout << "Выполнили подготовку строки с сырым значением" << std::endl;
     
     sqlite3_bind_text(stmt, 1, login.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, hash_password.c_str(), -1, SQLITE_STATIC);
-    std::cout << "Положили в строки искомое значение" << std::endl;
+    //std::cout << "Положили в строки искомое значение" << std::endl;
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         std::cerr << "Ошибка добавления пользователя: " << sqlite3_errmsg(db) << std::endl;

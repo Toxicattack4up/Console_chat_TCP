@@ -1,24 +1,36 @@
 #pragma once
 #include <string>
-#include "Account.h"
+#include <vector>
 #include "chat_server_tcp/Client.h"
 
-// Класс для управления меню пользователя
-class Menu
-{
+class Menu {
 private:
     std::string current_user;
-    Account account;
+    Client client;
+    
+    // Приватные методы для организации кода
+    void displayMainMenu();
+    void displayUserMenu();
+    void displayPrivateChatHeader(const std::string& receiver);
+    void displayPublicChatHeader();
+    void displayHelpCommands(bool isPrivateChat = false);
+    
+    // Основные обработчики
+    bool handleLogin(Client& client);
+    bool handleRegistration();
+    void handlePrivateChat(Client& client);
+    void handlePublicChat(Client& client);
+    std::string selectUserFromList(const std::vector<std::string>& users);
+    
+    // Вспомогательные методы
+    void processPrivateMessage(Client& client, const std::string& receiver, const std::string& message);
+    void processPublicMessage(Client& client, const std::string& message);
+    bool processCommand(Client& client, const std::string& command, const std::string& context = "");
+
 public:
-    // Метод для очистки экрана и чтобы был красивый вывод
+    // Основные публичные методы
     void ClearScreen();
-
-    // Метод для запуска основного меню
     int RunMenu(Client& client);
-
-    // Меню для авторизованного пользователя
     int UserMenu(Client& client);
-
-    // Метод для отображения всех сообщений
     int ShowAllMessages(Client& client);
 };
