@@ -92,7 +92,6 @@ int Menu::UserMenu(Client& client)
         {
         case 1:
             {
-                // Get list of users from server
                 auto users = client.getListOfUsers();
                 if (users.empty()) {
                     std::lock_guard<std::mutex> lock(io_mutex);
@@ -100,21 +99,18 @@ int Menu::UserMenu(Client& client)
                     break;
                 }
 
-                // Print users with indices
-                    {
-                        std::lock_guard<std::mutex> lock(io_mutex);
-                        std::cout << "Доступные пользователи:" << std::endl;
-                        for (size_t i = 0; i < users.size(); ++i) {
-                            std::cout << i+1 << ". " << users[i] << std::endl;
-                        }
-                    }
+                std::lock_guard<std::mutex> lock(io_mutex);
+                std::cout << "Доступные пользователи:" << std::endl;
+                
+                for (size_t i = 0; i < users.size(); ++i) {
+                    std::cout << i+1 << ". " << users[i] << std::endl;
+                }
 
                 std::string selection = ReadLineLocked("Выберите пользователя по номеру или введите имя: ");
                 if (selection.empty()) {
                     break;
                 }
 
-                // determine receiver name
                 std::string chosen;
                 try {
                     int idx = std::stoi(selection);
@@ -129,15 +125,14 @@ int Menu::UserMenu(Client& client)
                     break;
                 }
 
-                // Enter private chat loop
-                {
-                    std::lock_guard<std::mutex> lock(io_mutex);
-                    std::cout << "Открыт приватный чат с: " << chosen << ". Введите /exit чтобы вернуться." << std::endl;
-                }
+                
+                std::lock_guard<std::mutex> lock(io_mutex);
+                std::cout << "Открыт приватный чат с: " << chosen << ". Введите /exit чтобы вернуться." << std::endl;
+                
                 while (true) {
                     std::string pm = ReadLineLocked("(private) ");
                     if (pm.empty()) continue;
-                    // Handle slash-commands locally (do not forward as messages)
+                    
                     if (pm[0] == '/') {
                         if (pm == "/exit") break;
                         if (pm == "/help") {

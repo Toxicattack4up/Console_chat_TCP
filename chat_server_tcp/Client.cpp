@@ -23,54 +23,43 @@ Client::~Client() {
     }
 }
 
-bool Client::sendRegister(const std::string& login, const std::string& password, const std::string& name) {
+bool Client::sendRegister(const std::string& login, const std::string& username, const std::string& password) {
     char buffer[BUFFER_SIZE];
-    std::string registerMessageToServer = "REGISTER " + login + " " + password +  " " + name;
+    std::string registerMessageToServer = "REGISTER " + login + " " + username +  " " + password;
 
     if(registerMessageToServer.size() > BUFFER_SIZE - 50) {
-        {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "REGISTER message is too long" << std::endl;
-        }
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cerr << "REGISTER message is too long" << std::endl;
         return false;
     }
 
     if(clientSock == -1 || !running) {
-        {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Client is not connected" << std::endl;
-        }
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cerr << "Client is not connected" << std::endl;
         return false;
     } else {
-        {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cout << "Client is connected" << std::endl;
-        }
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cout << "Client is connected" << std::endl;
     }
 
-    if(send(clientSock, registerMessageToServer.c_str(), registerMessageToServer.length(), 0) < 0){
-        {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Error sending REGISTER message to server" << std::endl;
-        }
+    if(send(clientSock, registerMessageToServer.c_str(), registerMessageToServer.length(), 0) < 0) {
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cerr << "Error sending REGISTER message to server" << std::endl;
         return false;
     }
     return true;
 }
 
-void Client::connectToServer(const std::string& ip_to_server)
-{
+void Client::connectToServer(const std::string& ip_to_server) {
     #ifdef _WIN32
         WSADATA wsa;
         if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) { std::cerr << "Winsock error"; exit(1); }
     #endif
     
     clientSock = socket(AF_INET, SOCK_STREAM, 0);
-    if(clientSock < 0){
-        {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Error to create socket" << std::endl;
-        }
+    if(clientSock < 0) {
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cerr << "Error to create socket" << std::endl;
         exit(1);
     }
 
@@ -78,22 +67,16 @@ void Client::connectToServer(const std::string& ip_to_server)
     serverAddress.sin_family = AF_INET;
     
     if(inet_pton(AF_INET, ip_to_server.c_str(), &serverAddress.sin_addr) <= 0) {
-        {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Invalid IP address" << std::endl;
-        }
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cerr << "Invalid IP address" << std::endl;
         exit(1);
     }
     serverAddress.sin_port = htons(serverPort);
     if (connect(clientSock, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) == 0)
     {
-        {
-            logInfo("Connected to server");
-        }
+        logInfo("Connected to server");
     } else {
-        {
-            logError("Error to connect server");
-        }
+        logError("Error to connect server");
         exit(1);
     }
 }

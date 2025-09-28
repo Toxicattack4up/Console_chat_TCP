@@ -9,7 +9,9 @@
 class DB {
 public:
     DB(const std::string& db_name);
-    DB() = default;
+    DB() = delete;
+    DB(const DB&) = delete;
+    DB& operator=(const DB&) = delete;
     ~DB();
 
     //фиксация сообщения в БД
@@ -19,7 +21,7 @@ public:
 
     int getUserId(const std::string& login);
     //добавление пользователя в БД
-    void addUser(const std::string& login, const std::string& password, const std::string& name);
+    void addUser(const std::string& login, const std::string& name, const std::string& password);
     //проверка пользователя в БД
     bool verifyUser(const std::string& login, const std::string& password);
     //получение истории сообщений
@@ -31,6 +33,6 @@ public:
     void logAction(const std::string& action);
 
 private:
-    sqlite3* db;
+    sqlite3* db = nullptr;
     std::mutex dbMutex;
 };

@@ -9,6 +9,10 @@
 #include <iomanip>
 #include <sstream>
 #include <unordered_map>
+#include <cerrno>
+#include <cstring>
+#include "../common.h"
+#include "../DB.h"
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -28,12 +32,9 @@ private:
     std::mutex clientsMutex;
     std::vector<int> clientSockets;
     std::map<int, std::string> clientLogins;
-    std::unordered_map<std::string, std::pair<std::string, std::string>> credentials;
-    std::vector<std::string> allMessages;
-    std::map<std::string, std::vector<std::string>> privateMessages;
-    std::mutex dataMutex;
     int maxconnect = 10;
     static const size_t BUFFER_SIZE = 2048;
+    DB db;
 
 public:
     Server();
@@ -43,9 +44,21 @@ public:
     void closeClients(int clientSocket);
     void broadcastMessage(const std::string& message, int senderSocket);
     void privateMessage(const std::string& sender, const std::string& receiver, const std::string& content, int senderSocket);
-    void addUser(const std::string& login, const std::string& password, const std::string& name);
-    std::string findUser(const std::string& login);
-    std::vector<std::string> getUserList();
+
 private:
-    std::string hashPassword(const std::string& password);
+    void handleClientDisconnect(int clientSocket, bool authorized, const std::string& login);
+    void handleUnauthorizedClient(int clientSocket, const std::string& message, bool& authorized, std::string& login);
+    void handleAuthorizedClient(int clientSocket, const std::string& login, const std::string& message);
+    void handleRegistration(int clientSocket, const std::string& message);
+    void handleAuthorization(int clientSocket, const std::string& message, bool& authorized, std::string& login);
+    void handlePublicMessage(int clientSocket, const std::string& login, const std::string& message);
+    void handlePrivateMessage(int clientSocket, const std::string& login, const std::string& message);
+    void handleGetUsers(int clientSocket, const std::string& login);
+    void handleClientExit(int clientSocket, const std::string& login);
+    void handleGetHistory(int clientSocket, const std::string& login);
+    void handleGetPrivateHistory(int clientSocket, const std::string& login, const std::string& message);
+    void handleUnknownCommand(int clientSocket, const std::string& login);
+    
+    static bool send_line(int sock, const std::string &msg);
+    std::string getCurrentTimestamp();
 };
