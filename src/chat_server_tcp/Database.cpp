@@ -1,18 +1,47 @@
 #include "Database.h"
 
 ChatDB::ChatDB(const std::string& ChatDB_name) {
-    if (sqlite3_open(ChatDB_name.c_str(), &db )) {
-        throw std::runtime_error("Can't open database: " + std::string(sqlite3_errmsg(db)));
+    if (sqlite3_open(ChatDB_name.c_str(), &db)) {
+        throw std::runtime_error("Не получилось открыть базу: " + std::string(sqlite3_errmsg(db)));
     }
+    const char* createUsers =
+    "CREATE TABLE IF NOT EXISTS users ( \
+    id INTEGER PRIMARY KEY AUTOINCREMENT, \
+    login TEXT UNIQUE NOT NULL, \
+    username TEXT, \
+    password TEXT NOT NULL \
+    );";
 
-    logAction("Открыли базу " + ChatDB_name);
+const char* createMessages =
+    "CREATE TABLE IF NOT EXISTS messages ( \
+    id INTEGER PRIMARY KEY AUTOINCREMENT, \
+    user_id INTEGER, \
+    receiver_id INTEGER, \
+    message TEXT, \
+    timestamp DATETIME, \
+    FOREIGN KEY(user_id) REFERENCES users(id), \
+    FOREIGN KEY(receiver_id) REFERENCES users(id) \
+    )";
+
+const char* createLogs =
+    "CREATE TABLE IF NOT EXISTS logs ( \
+    id INTEGER PRIMARY KEY AUTOINCREMENT, \
+    action TEXT, \
+    timestamp DATETIME \
+    );";
+
+sqlite3_exec(db, createUsers, nullptr, nullptr, nullptr);
+sqlite3_exec(db, createMessages, nullptr, nullptr, nullptr);
+sqlite3_exec(db, createLogs, nullptr, nullptr, nullptr);
+
+logAction("Открыли базу " + ChatDB_name);
 }
+
 
 ChatDB::~ChatDB() {
     logAction("Закрыли базу");
     sqlite3_close(db);
 }
-
 /*int callback(void *NotUsed, int argc, char **argv, char **azColName) {
     for(int i = 0; i < argc; i++) {
         std::cout << azColName[i] << ": " << (argv[i] ? argv[i] : "NULL") << std::endl;
@@ -86,7 +115,7 @@ void ChatDB ::addMessage(const std::string& sender, const std::string& receiver,
     
     
     if (sqlite3_prepare_v2(db , sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        std::cerr << "Ошибка подготовки: " << sqlite3_errmsg(db ) << std::endl;
+        std::cerr << "Ошибка подготовки: " << sqlite3_errmsg(db) << std::endl;
         return;
     }
 
