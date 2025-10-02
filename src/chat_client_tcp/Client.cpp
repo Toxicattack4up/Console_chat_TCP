@@ -17,7 +17,7 @@ Client::~Client() {
     std::lock_guard<std::mutex> lock(io_mutex);
     std::cout << "Client destroyed" << std::endl;
 }
-
+// Регистрация (Готов)
 bool Client::sendRegister(const std::string& login, const std::string& username, const std::string& password) {
     char buffer[BUFFER_SIZE];
     std::string registerMessageToServer = "REGISTER " + login + " " + username +  " " + password;
@@ -77,7 +77,7 @@ bool Client::sendRegister(const std::string& login, const std::string& username,
 
     return true;
 }
-
+// Покдлючение к серверу (Готов)
 void Client::connectToServer(const std::string& ip_to_server) {
     #ifdef _WIN32
         WSADATA wsa;
@@ -107,7 +107,7 @@ void Client::connectToServer(const std::string& ip_to_server) {
         exit(1);
     }
 }
-
+// Проверка подключения (Готов)
 void Client::isConnected() {
     if(clientSock != -1 && running) {
         std::cout << "Client is connected" << std::endl;
@@ -152,7 +152,7 @@ std::vector<std::string> Client::getListOfUsers() {
     
     return users;
 }
-
+// Метод для отправки команды аутентификации на сервер (Готов)
 bool Client::sendAUTH(const std::string& login, const std::string& password) {
     char buffer[BUFFER_SIZE];
     std::string response;
