@@ -120,8 +120,6 @@ std::vector<std::string> Client::getListOfUsers() {
     char buffer[BUFFER_SIZE];
     std::string getUsersMessage = "GET_USERS";
     std::vector<std::string> users;
-    // send request and wait for response in receiveMessages
-    // prepare to wait for users response before sending to avoid race
     std::unique_lock<std::mutex> ulock(users_mutex);
     usersResponse.clear();
     waitingForUsers = true;
@@ -132,14 +130,12 @@ std::vector<std::string> Client::getListOfUsers() {
         return users;
     }
 
-    // wait for users response
     std::unique_lock<std::mutex> lock(users_mutex);
     if (!users_cv.wait_for(ulock, std::chrono::seconds(5), [this]() { return !waitingForUsers; })) {
         std::lock_guard<std::mutex> lock(io_mutex);
         std::cerr << "Timeout waiting for USERS response" << std::endl;
         return users;
     }
-    // parse usersResponse
     if (usersResponse.rfind("USERS ", 0) == 0) {
         std::string usersList = usersResponse.substr(6);
         std::istringstream iss(usersList);
@@ -228,7 +224,6 @@ void Client::receiveMessages() {
         int rec = recv(clientSock, buffer, sizeof(buffer) - 1, 0);
 
         if (rec <= 0) {
-            // If we've already initiated disconnect, exit quietly
             if (!running) break;
             if (rec == 0) {
                 logInfo("Закрытое соединение с сервером");
