@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <sstream>
 #include "../include/common.h"
+#include "../chat_server_tcp/Server.h"
 
 #ifdef _WIN32
     #include <winsock2.h>

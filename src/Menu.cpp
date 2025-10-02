@@ -315,7 +315,7 @@ int Menu::RunMenu(Client& client) {
         
         switch (choice) {
             case 1:
-                if (handleLogin(client)) {
+                if (handleLogin(client) == true) {
                     UserMenu(client);
                 } else {
                     ReadLineLocked("Нажмите Enter для продолжения...");

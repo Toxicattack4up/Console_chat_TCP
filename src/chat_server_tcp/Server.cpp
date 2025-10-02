@@ -53,8 +53,9 @@ Server::Server() : db("tcp_chat.db") {
         exit(1);
     }
     
-    logInfo("Server starts to 12345 port");
+    logInfo("Сервер запущен на порту 12345");
     db.logAction("Сервер запущен на порту 12345");
+    std::cout << "Сервер запущен на порту 12345" << std::endl;
 }
 
 Server::~Server() {
@@ -106,6 +107,10 @@ void Server::handleClient(int clientSocket) {
         memset(buffer, 0, sizeof(buffer));
         int rec = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
         
+        logInfo("Получено сообщение от клиента " + std::to_string(clientSocket));
+        db.logAction("Получено сообщение от клиента " + std::to_string(clientSocket));
+        std::cout << "Подключился клиент " << clientSocket << ": " << buffer << std::endl;
+
         if (rec <= 0) {
             handleClientDisconnect(clientSocket, authorized, login);
             return;
@@ -176,11 +181,15 @@ void Server::handleRegistration(int clientSocket, const std::string& message) {
     
     if (login.empty() || name.empty() || password.empty()) {
         send_line(clientSocket, "REGISTER_FAILED: All fields required");
+        std::cout << "Регистрация не удалась: все поля обязательны" << std::endl;
+        db.logAction("Регистрация не удалась: все поля обязательны");
         return;
     }
 
     if (login.length() < 3 || password.length() < 3) {
         send_line(clientSocket, "REGISTER_FAILED: Login and password must be at least 3 characters");
+        std::cout << "Регистрация не удалась: логин и пароль должны быть не менее 3 символов" << std::endl;
+        db.logAction("Регистрация не удалась: логин и пароль должны быть не менее 3 символов");
         return;
     }
 
@@ -191,6 +200,7 @@ void Server::handleRegistration(int clientSocket, const std::string& message) {
 
     db.addUser(login, name, password);
     send_line(clientSocket, "REGISTER_SUCCESS");
+    std::cout << "Зарегистрирован новый пользователь: " << login << std::endl;
     db.logAction("Зарегистрирован новый пользователь: " + login);
 }
 
@@ -202,16 +212,19 @@ void Server::handleAuthorization(int clientSocket, const std::string& message,
 
     db.logAction("Попытка авторизации клиента: " + login_input);
     
+    std::cout << iss.str() << std::endl;
+
     if (db.verifyUser(login_input, password_input)) {
         authorized = true;
         login = login_input;
 
         std::lock_guard<std::mutex> lock(clientsMutex);
-        clientLogins[clientSocket] = login;
-
-        if (send_line(clientSocket, "AUTH_SUCCESS")) {
+        //clientLogins[clientSocket] = login;
+        if(db.verifyUser(login_input, password_input) == true) {
+            send_line(clientSocket, "AUTH_SUCCESS");
             logInfo("Client authenticated: " + login_input);
             db.logAction("Клиент авторизован: " + login_input);
+            std::cout << "Клиент авторизован: " << login_input << std::endl;
         } else {
             logError("Error sending AUTH_SUCCESS to client");
             closeClients(clientSocket);
@@ -277,6 +290,7 @@ void Server::handleGetUsers(int clientSocket, const std::string& login) {
 void Server::handleClientExit(int clientSocket, const std::string& login) {
     logInfo("Client requested exit: " + login);
     db.logAction("Клиент запросил выход: " + login);
+    std::cout << "Клиент " << login << " вышел из чата" << std::endl;
     closeClients(clientSocket);
 }
 

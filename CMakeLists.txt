@@ -21,9 +21,10 @@ add_subdirectory(src/chat_server_tcp)
 
 # ==== Клиент ====
 add_executable(tcp_chat_client
-    src/main.cpp
     src/Menu.cpp
     src/common.cpp
+    src/chat_client_tcp/Client.cpp
+    src/chat_client_tcp/client_main.cpp
 )
 
 target_link_libraries(tcp_chat_client PRIVATE chat_client)
@@ -31,6 +32,8 @@ target_link_libraries(tcp_chat_client PRIVATE chat_client)
 # ==== Сервер ====
 add_executable(tcp_chat_server
     src/chat_server_tcp/server_main.cpp
+    src/chat_server_tcp/Database.cpp
+    src/chat_server_tcp/Server.cpp
     src/common.cpp
 )
 

@@ -2,10 +2,11 @@
 #include <iostream>
 #include "Menu.h"
 #include "chat_client_tcp/Client.h"
+#include "chat_server_tcp/Server.h"
 
 int main() {
-    Client client;
-    Menu menu;
-    menu.RunMenu(client);
+    Server server;
+    server.run();
+
     return 0;
 }

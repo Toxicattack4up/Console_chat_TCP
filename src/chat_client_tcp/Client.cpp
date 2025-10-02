@@ -2,7 +2,6 @@
 
 Client::Client() {
     clientSock = -1;
-    
     #ifdef _WIN32
         WSADATA wsa;
         if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
@@ -10,6 +9,7 @@ Client::Client() {
             exit(1);
         }
     #endif
+    
 }
 
 Client::~Client() {
@@ -23,6 +23,7 @@ Client::~Client() {
 bool Client::sendRegister(const std::string& login, const std::string& username, const std::string& password) {
     char buffer[BUFFER_SIZE];
     std::string registerMessageToServer = "REGISTER " + login + " " + username +  " " + password;
+    std::string response;
 
     if(registerMessageToServer.size() > BUFFER_SIZE - 50) {
         std::lock_guard<std::mutex> lock(io_mutex);
@@ -44,6 +45,38 @@ bool Client::sendRegister(const std::string& login, const std::string& username,
         std::cerr << "Error sending REGISTER message to server" << std::endl;
         return false;
     }
+
+    while (true)
+    {
+        int bytesRead = recv(clientSock, buffer, sizeof(buffer), 0);
+        if (bytesRead <= 0) {
+            std::lock_guard<std::mutex> lock(io_mutex);
+            std::cerr << "Error receiving AUTH response" << std::endl;
+            return false;
+        }
+        buffer[bytesRead] = '\0';
+        response += buffer;
+        if (response.find('\n') != std::string::npos) break;
+    }
+    
+    response.erase(std::remove(response.begin(), response.end(), '\n'), response.end());
+    response.erase(std::remove(response.begin(), response.end(), '\r'), response.end());
+
+    if (response == "REGISTER_SUCCESS") {
+        logInfo("Регистрация прошла успешно для " + login);
+        std::cout << "Регистрация прошла успешно для " << login << std::endl;
+        startThread();
+        return true;
+    } else if (response == "REGISTER_FAILED") {
+        logError("Ошибка регистрации для " + login);
+        std::cout << "Ошибка регистрации для " << login << std::endl;
+        return false;
+    } else {
+        logError("Неизвестный ответ от сервера: " + response);
+        std::cout << "Неизвестный ответ от сервера: " << response << std::endl;
+        return false;
+    }
+
     return true;
 }
 
@@ -69,8 +102,7 @@ void Client::connectToServer(const std::string& ip_to_server) {
         exit(1);
     }
     serverAddress.sin_port = htons(serverPort);
-    if (connect(clientSock, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) == 0)
-    {
+    if (connect(clientSock, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) == 0) {
         logInfo("Connected to server");
     } else {
         logError("Error to connect server");
@@ -92,87 +124,109 @@ std::vector<std::string> Client::getListOfUsers() {
     std::vector<std::string> users;
     // send request and wait for response in receiveMessages
     // prepare to wait for users response before sending to avoid race
-    {
-        std::unique_lock<std::mutex> ulock(users_mutex);
-        usersResponse.clear();
-        waitingForUsers = true;
-    }
-    if (send(clientSock, getUsersMessage.c_str(), getUsersMessage.length(), 0) < 0)
-    {
+    std::unique_lock<std::mutex> ulock(users_mutex);
+    usersResponse.clear();
+    waitingForUsers = true;
+
+    if (send(clientSock, getUsersMessage.c_str(), getUsersMessage.length(), 0) < 0) {
         std::lock_guard<std::mutex> lock(io_mutex);
         std::cerr << "Error send GET_USERS message to server" << std::endl;
         return users;
     }
     // wait for users response
-    {
-        std::unique_lock<std::mutex> ulock(users_mutex);
-        if (!users_cv.wait_for(ulock, std::chrono::seconds(5), [this]() { return !waitingForUsers; })) {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Timeout waiting for USERS response" << std::endl;
-            return users;
-        }
-        // parse usersResponse
-        if (usersResponse.rfind("USERS ", 0) == 0) {
-            std::string usersList = usersResponse.substr(6);
-            std::istringstream iss(usersList);
-            std::string user;
-            while (iss >> user) users.push_back(user);
-        } else {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Invalid USERS response" << std::endl;
-        }
+    
+    std::unique_lock<std::mutex> lock(users_mutex);
+    if (!users_cv.wait_for(ulock, std::chrono::seconds(5), [this]() { return !waitingForUsers; })) {
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cerr << "Timeout waiting for USERS response" << std::endl;
+        return users;
     }
+    // parse usersResponse
+    if (usersResponse.rfind("USERS ", 0) == 0) {
+        std::string usersList = usersResponse.substr(6);
+        std::istringstream iss(usersList);
+        std::string user;
+        while (iss >> user) users.push_back(user);
+    } else {
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cerr << "Invalid USERS response" << std::endl;
+    }
+    
     return users;
 }
 
 bool Client::sendAUTH(const std::string& login, const std::string& password) {
     char buffer[BUFFER_SIZE];
+    std::string response;
     std::string messageToServer = "AUTH " + login + " " + password;
+    std::cout << "Ввели логин и пароль " << login << " " << password << std::endl; 
+    std::cout << messageToServer << std::endl;
     
-    if (send(clientSock, messageToServer.c_str(), messageToServer.length(), 0) < 0)
-    {
-        {
-            std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Error send AUTH message to server" << std::endl;
-        }
+    if (send(clientSock, messageToServer.c_str(), messageToServer.length(), 0) < 0) {
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cerr << "Error send AUTH message to server" << std::endl;
         return false;
     }
-    
-    int bytesRead = recv(clientSock, buffer, sizeof(buffer), 0);  
-    if (bytesRead <= 0) 
-    {  
-        {
+
+    while (true)
+    {
+        int bytesRead = recv(clientSock, buffer, sizeof(buffer), 0);
+        if (bytesRead <= 0) {
             std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Error to connect server or breaking the connection";
+            std::cerr << "Error receiving AUTH response" << std::endl;
+            return false;
         }
+        buffer[bytesRead] = '\0';
+        response += buffer;
+        //if (response.find('\n') != std::string::npos) break;
+
+        response.erase(std::remove(response.begin(), response.end(), '\n'), response.end());
+        response.erase(std::remove(response.begin(), response.end(), '\r'), response.end());
+
+        if (response == "AUTH_SUCCESS") {
+            logInfo("Аутентификация прошла успешно для " + login);
+            std::cout << "Аутентификация прошла успешно для " << login << std::endl;
+            startThread();
+            return true;
+        } else if (response == "AUTH_FAILED") {
+            logError("Ошибка аутентификации для " + login);
+            std::cout << "Ошибка аутентификации для " << login << std::endl;
+            return false;
+        } else {
+            logError("Неизвестный ответ от сервера: " + response);
+            std::cout << "Неизвестный ответ от сервера: " << response << std::endl;
+            return false;
+        }
+        return true;
+    }
+    
+    
+    /*int bytesRead = recv(clientSock, buffer, sizeof(buffer) - 1, 0);  
+    if (bytesRead <= 0) {  
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cerr << "Error to connect server or breaking the connection";
         return false;
     }
     buffer[bytesRead] = '\0';
     std::string responce(buffer);
     const std::string authOk = "AUTH_SUCCESS";
-    if (responce.rfind(authOk, 0) == 0)
-    {
-        {
-            logInfo(std::string("Response server: ") + authOk);
-            // If server sent additional data after AUTH_SUCCESS (e.g. history), print it now
-            if (responce.size() > authOk.size()) {
-                std::string rest = responce.substr(authOk.size());
-                if (!rest.empty()) std::cout << rest << std::endl;
-            }
+
+    if (responce.find(authOk, 0) == 0) {
+        logInfo(std::string("Response server: ") + authOk);
+        // If server sent additional data after AUTH_SUCCESS (e.g. history), print it now
+        if (responce.size() > authOk.size()) {
+            std::string rest = responce.substr(authOk.size());
+            if (!rest.empty()) std::cout << rest << std::endl;
         }
         startThread();
         return true;
     } else if (responce == "AUTH_FAILED") {  
-        {
-            logError("AUTH_FAILED response from server");
-        }
+        logError("AUTH_FAILED response from server");
         return false; 
     } else {
-        {
-            logError("Unknown response from server during AUTH");
-        }
+        logError("Unknown response from server during AUTH");
         return false;
-    }
+    }*/
 }
 
 bool Client::sendToAll(const std::string& message) {

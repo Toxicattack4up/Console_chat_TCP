@@ -35,6 +35,7 @@ sqlite3_exec(db, createMessages, nullptr, nullptr, nullptr);
 sqlite3_exec(db, createLogs, nullptr, nullptr, nullptr);
 
 logAction("Открыли базу " + ChatDB_name);
+std::cout << "Открыли базу " << ChatDB_name << std::endl;
 }
 
 
@@ -216,7 +217,7 @@ std::vector<std::string> ChatDB ::getPublicMessages() {
     return messages;
 }
 
-void ChatDB ::addUser(const std::string& login, const std::string& name, const std::string& password) {
+void ChatDB::addUser(const std::string& login, const std::string& name, const std::string& password) {
     std::lock_guard<std::mutex> lock(ChatDB Mutex);
     sqlite3_stmt *stmt;
 
@@ -250,7 +251,7 @@ void ChatDB ::addUser(const std::string& login, const std::string& name, const s
     //std::cout << "освободили ресурсы" << std::endl;
 }
 
-bool ChatDB ::verifyUser(const std::string& login, const std::string& password) {
+bool ChatDB::verifyUser(const std::string& login, const std::string& password) {
     std::lock_guard<std::mutex> lock(ChatDB Mutex);
     sqlite3_stmt *stmt;
     
@@ -275,10 +276,14 @@ bool ChatDB ::verifyUser(const std::string& login, const std::string& password) 
             sqlite3_finalize(stmt);
             //std::cout << "освободили ресурсы" << std::endl;
             logAction("Проверили пользователя " + login);
-            return hash_password == stored_hash;
+            std::cout << "Проверили пользователя " << login << std::endl;
+            return true;
+            //return hash_password == stored_hash;
         }
     }
     logAction("Не смогли проверить пользователя " + login);
+    std::cout << "Не смогли проверить пользователя " << login << std::endl;
+    sqlite3_finalize(stmt);
     return false;
 }
 

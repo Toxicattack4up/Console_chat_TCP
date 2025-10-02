@@ -1,15 +1,12 @@
 #include "Client.h"
-#include "Server.h"
+#include "../chat_server_tcp/Server.h"
+#include "Menu.h"
 #include <iostream>
 
 int main() {
-    std::string login, password;
     Client client;
+    Menu menu;
     client.connectToServer("127.0.0.1");
-    std::cout << "Введите логин, а затем пароль" << std::endl; 
-    std::cin >> login;
-    std::cin >> password;
-
-    client.sendAUTH(login, password);
+    menu.RunMenu(client);
 
 }

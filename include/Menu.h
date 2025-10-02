@@ -5,7 +5,7 @@
 
 class Menu {
 private:
-    std::string current_user;
+    std::string current_user; // Текущий вошедший пользователь
     
     // Приватные методы для организации кода
     void displayMainMenu();
