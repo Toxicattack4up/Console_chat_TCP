@@ -157,12 +157,11 @@ bool Client::sendAUTH(const std::string& login, const std::string& password) {
     char buffer[BUFFER_SIZE];
     std::string response;
     std::string messageToServer = "AUTH " + login + " " + password;
-    std::cout << "Ввели логин и пароль " << login << " " << password << std::endl; 
     std::cout << messageToServer << std::endl;
     
     if (send(clientSock, messageToServer.c_str(), messageToServer.length(), 0) < 0) {
         std::lock_guard<std::mutex> lock(io_mutex);
-        std::cerr << "Error send AUTH message to server" << std::endl;
+        std::cerr << "Ошибка отправки авторизационного сообщения на сервер" << std::endl;
         return false;
     }
 
@@ -171,7 +170,7 @@ bool Client::sendAUTH(const std::string& login, const std::string& password) {
         int bytesRead = recv(clientSock, buffer, sizeof(buffer), 0);
         if (bytesRead <= 0) {
             std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Error receiving AUTH response" << std::endl;
+            std::cerr << "Ошибка при получении ответа AUTH" << std::endl;
             return false;
         }
         buffer[bytesRead] = '\0';
@@ -201,7 +200,7 @@ bool Client::sendToAll(const std::string& message) {
     oss << "ALL " << message;
     std::string messageToAll = oss.str();
     if (send(clientSock, messageToAll.c_str(), messageToAll.length(), 0) < 0) {
-        logError("Error sending message to all");
+        logError("Сообщение об ошибке при отправке всем");
         return false;
     }
     return true;
@@ -214,11 +213,11 @@ void Client::sendPrivate(const std::string& sender, const std::string& receiver,
     char buffer[BUFFER_SIZE];
 
     if (send(clientSock, privateMessage.c_str(), privateMessage.length(), 0) < 0) {
-        logError("Error send private message");
+        logError("Ошибка при отправке личного сообщения");
         return;
     } else {
         // success will be observed when the server forwards message back to clients
-        logInfo("Private message sent from " + sender + " to " + receiver);
+        logInfo("Личное сообщение, отправленное от " + sender + " к " + receiver);
     }
 }
 void Client::receiveMessages() {
@@ -232,9 +231,9 @@ void Client::receiveMessages() {
             // If we've already initiated disconnect, exit quietly
             if (!running) break;
             if (rec == 0) {
-                logInfo("Server closed connection");
+                logInfo("Закрытое соединение с сервером");
             } else {
-                logError("Error reading the message");
+                logError("Ошибка при чтении сообщения от сервера");
             }
             disconnect();
             break;
@@ -242,15 +241,12 @@ void Client::receiveMessages() {
 
         incomingBuffer.append(buffer, rec);
 
-        // extract full lines delimited by '\n'
         size_t pos;
         while ((pos = incomingBuffer.find('\n')) != std::string::npos) {
             std::string line = incomingBuffer.substr(0, pos);
-            // remove possible '\r'
             if (!line.empty() && line.back() == '\r') line.pop_back();
             incomingBuffer.erase(0, pos + 1);
 
-            // process the line
             if (waitingForHistory) {
                 if (line == "END_OF_HISTORY") {
                     std::unique_lock<std::mutex> hlock(history_mutex);
@@ -275,7 +271,6 @@ void Client::receiveMessages() {
                 waitingForUsers = false;
                 users_cv.notify_one();
             } else {
-                // live message: print and add to recent buffer
                 logInfo(line);
                 std::lock_guard<std::mutex> rlock(recent_mutex);
                 recentMessages.push_back(line);
@@ -290,28 +285,28 @@ void Client::startThread() {
         std::thread(&Client::receiveMessages, this).detach();
         isThreadRunning = true;
         std::lock_guard<std::mutex> lock(io_mutex);
-        std::cout << "Message reader started" << std::endl;
+        std::cout << "Запущен процесс чтения сообщений" << std::endl;
     }   
 }
 
 void Client::stopReceivedMessage() {
     running = false;
 }
-
+// Отключение от сервера (Готов)
 void Client::disconnect() {
     std::string exitMessage = "EXIT";
 
     if(clientSock != -1 && running) {
         if (send(clientSock, exitMessage.c_str(), exitMessage.length(), 0) < 0) {
             std::lock_guard<std::mutex> lock(io_mutex);
-            std::cerr << "Error sending exit message" << std::endl;
+            std::cerr << "Ошибка при отправке сообщения о выходе" << std::endl;
         } else {
             std::lock_guard<std::mutex> lock(io_mutex);
-            std::cout << "The exit message was sent successfully" << std::endl;
+            std::cout << "Сообщение о выходе было успешно отправлено" << std::endl;
         }
     }  else {
         std::lock_guard<std::mutex> lock(io_mutex);
-        std::cout << "Client socket is not connected" << std::endl;
+        std::cout << "Клиентский сокет не подключен" << std::endl;
         }
 
     #ifdef _WIN32
@@ -328,34 +323,30 @@ void Client::disconnect() {
     running = false;
     isThreadRunning = false;
     std::lock_guard<std::mutex> lock(io_mutex);
-    std::cout << "Client disconnected" << std::endl;
+    std::cout << "Клиент отключен" << std::endl;
 }
 
 void Client::requestHistory() {
     char buffer[BUFFER_SIZE];
     std::string req = "GET_HISTORY";
-    // Prepare to receive history before sending to avoid race where server replies before flag set
     std::unique_lock<std::mutex> hlock(history_mutex);
     historyLines.clear();
     waitingForHistory = true;
 
     if (send(clientSock, req.c_str(), req.length(), 0) < 0) {
         std::lock_guard<std::mutex> lock(io_mutex);
-        std::cerr << "Error sending GET_HISTORY message to server" << std::endl;
-        // reset flag
+        std::cerr << "Ошибка при отправке сообщения GET_HISTORY на сервер" << std::endl;
         std::unique_lock<std::mutex> hlock(history_mutex);
         waitingForHistory = false;
         return;
     }
 
-    // Wait until receiver notifies that END_OF_HISTORY arrived
     std::unique_lock<std::mutex> hlock(history_mutex);
     history_cv.wait(hlock, [this]() { return !waitingForHistory; });
 
-    // Print the collected history but filter out recent messages to avoid duplicates
     std::lock_guard<std::mutex> lock(io_mutex);
     if (historyLines.empty()) {
-        std::cout << "(No history)" << std::endl;
+        std::cout << "(Нет истории сообщений)" << std::endl;
     } else {
         for (const auto &line : historyLines) {
             bool found = false;
@@ -378,7 +369,7 @@ void Client::requestPrivateHistory(const std::string &other) {
 
     if (send(clientSock, req.c_str(), req.length(), 0) < 0) {
         std::lock_guard<std::mutex> lock(io_mutex);
-        std::cerr << "Error sending GET_PRIVATE message to server" << std::endl;
+        std::cerr << "Ошибка при отправке сообщения GET_PRIVATE на сервер" << std::endl;
         std::unique_lock<std::mutex> lock2(private_history_mutex);
         waitingForPrivateHistory = false;
         return;
@@ -390,7 +381,7 @@ void Client::requestPrivateHistory(const std::string &other) {
     // Print the collected private history
     std::lock_guard<std::mutex> iolock(io_mutex);
     if (privateHistoryLines.empty()) {
-        std::cout << "(No private history)" << std::endl;
+        std::cout << "(Нет истории приватных сообщений)" << std::endl;
     } else {
         for (const auto &line : privateHistoryLines) std::cout << line << std::endl;
     }
