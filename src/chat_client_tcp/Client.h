@@ -13,17 +13,18 @@
 #include "../chat_server_tcp/Server.h"
 
 #ifdef _WIN32
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    #pragma comment(lib, "ws2_32.lib")
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
 #else
-    #include <sys/types.h>
-    #include <netinet/in.h>
-    #include <arpa/inet.h>
-    #include <unistd.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 #endif
 
-class Client {
+class Client
+{
 private:
     int clientSock;
     int serverPort = 12345;
@@ -34,33 +35,33 @@ private:
     std::vector<std::string> historyLines;
     std::mutex history_mutex;
     std::condition_variable history_cv;
-    
+
     bool waitingForPrivateHistory = false;
     std::vector<std::string> privateHistoryLines;
     std::mutex private_history_mutex;
     std::condition_variable private_history_cv;
-    
+
     bool waitingForUsers = false;
     std::string usersResponse;
     std::mutex users_mutex;
     std::condition_variable users_cv;
-    
+
     std::deque<std::string> recentMessages;
     std::mutex recent_mutex;
     size_t recentLimit = 100;
-    
+
     std::string incomingBuffer;
-    
+
 public:
     Client();
     ~Client();
-    bool sendRegister(const std::string& login, const std::string& username, const std::string& password);
-    void connectToServer(const std::string& ip_to_server);
+    bool sendRegister(const std::string &login, const std::string &username, const std::string &password);
+    void connectToServer(const std::string &ip_to_server);
     void isConnected();
     std::vector<std::string> getListOfUsers();
-    bool sendAUTH(const std::string& login, const std::string& password);
-    bool sendToAll(const std::string& message);
-    void sendPrivate(const std::string& sender, const std::string& receiver, const std::string& message);
+    bool sendAUTH(const std::string &login, const std::string &password);
+    bool sendToAll(const std::string &message);
+    void sendPrivate(const std::string &sender, const std::string &receiver, const std::string &message);
     void requestHistory();
     void requestPrivateHistory(const std::string &other);
     void receiveMessages();
