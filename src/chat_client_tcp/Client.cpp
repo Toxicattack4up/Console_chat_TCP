@@ -147,42 +147,53 @@ void Client::isConnected()
 
 std::vector<std::string> Client::getListOfUsers()
 {
-    char buffer[BUFFER_SIZE];
+    //char buffer[BUFFER_SIZE];
     std::string getUsersMessage = "GET_USERS";
     std::vector<std::string> users;
-    std::unique_lock<std::mutex> ulock(users_mutex);
+    //std::unique_lock<std::mutex> ulock(users_mutex);
+
+    if (clientSock == -1)
+    {
+        std::lock_guard<std::mutex> lock(io_mutex);
+        std::cerr << "Клиент не подключен" << std::endl;
+        return users;
+    }
+    
     usersResponse.clear();
     waitingForUsers = true;
 
+    // Отправка запроса на сервер
     if (send(clientSock, getUsersMessage.c_str(), getUsersMessage.length(), 0) < 0)
     {
         std::lock_guard<std::mutex> lock(io_mutex);
-        std::cerr << "Error send GET_USERS message to server" << std::endl;
-        return users;
+        //std::cerr << "Error send GET_USERS message to server" << std::endl;
+        std::cerr << "Ошибка отправки сообщения GET_USERS на сервер" << std::endl;
+        return {};
     }
 
-    // wait for users response
-    std::unique_lock<std::mutex> lock(users_mutex);
-    if (!users_cv.wait_for(ulock, std::chrono::seconds(5), [this]()
-                           { return !waitingForUsers; }))
+    // Ожидание ответа с таймаутом 5 секунд
+    std::unique_lock<std::mutex> ulock(users_mutex);
+    if (!users_cv.wait_for(ulock, std::chrono::seconds(5), [this]() { return !waitingForUsers; }))
     {
         std::lock_guard<std::mutex> lock(io_mutex);
         std::cerr << "Timeout waiting for USERS response" << std::endl;
         return users;
     }
-    // parse usersResponse
-    if (usersResponse.rfind("USERS ", 0) == 0)
+    // Разбор ответа
+    if (usersResponse.find("USERS ") == 0)
     {
         std::string usersList = usersResponse.substr(6);
         std::istringstream iss(usersList);
         std::string user;
         while (iss >> user)
             users.push_back(user);
+
+        return users;
     }
     else
     {
         std::lock_guard<std::mutex> lock(io_mutex);
-        std::cerr << "Invalid USERS response" << std::endl;
+        std::cerr << "Неверный ответ USERS" << std::endl;
     }
 
     return users;
@@ -357,7 +368,7 @@ void Client::startThread()
     {
         std::thread(&Client::receiveMessages, this).detach();
         isThreadRunning = true;
-        std::lock_guard<std::mutex> lock(io_mutex);
+        std::lock_guard<std::mutex> iolock(io_mutex);
         std::cout << "Запущен процесс чтения сообщений" << std::endl;
     }
 }
@@ -403,7 +414,7 @@ void Client::disconnect()
 
     running = false;
     isThreadRunning = false;
-    std::lock_guard<std::mutex> lock(io_mutex);
+    std::lock_guard<std::mutex> iolock(io_mutex);
     std::cout << "Клиент отключен" << std::endl;
 }
 
@@ -417,18 +428,18 @@ void Client::requestHistory()
 
     if (send(clientSock, req.c_str(), req.length(), 0) < 0)
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        std::lock_guard<std::mutex> iolock(io_mutex);
         std::cerr << "Ошибка при отправке сообщения GET_HISTORY на сервер" << std::endl;
         std::unique_lock<std::mutex> hlock(history_mutex);
         waitingForHistory = false;
         return;
     }
 
-    std::unique_lock<std::mutex> hlock(history_mutex);
+    //std::unique_lock<std::mutex> hlock(history_mutex);
     history_cv.wait(hlock, [this]()
                     { return !waitingForHistory; });
 
-    std::lock_guard<std::mutex> lock(io_mutex);
+    std::lock_guard<std::mutex> iolock(io_mutex);
     if (historyLines.empty())
     {
         std::cout << "(Нет истории сообщений)" << std::endl;
@@ -442,8 +453,10 @@ void Client::requestHistory()
             for (const auto &r : recentMessages)
             {
                 if (r == line)
+                {
                     found = true;
-                break;
+                    break;
+                }
             }
             if (!found)
                 std::cout << line << std::endl;
@@ -456,22 +469,22 @@ void Client::requestPrivateHistory(const std::string &other)
     std::string req = "GET_PRIVATE " + other;
 
     // Prepare to receive private history before sending
-    std::unique_lock<std::mutex> lock(private_history_mutex);
+    std::unique_lock<std::mutex> plock(private_history_mutex);
     privateHistoryLines.clear();
     waitingForPrivateHistory = true;
 
     if (send(clientSock, req.c_str(), req.length(), 0) < 0)
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        std::lock_guard<std::mutex> iolock(io_mutex);
         std::cerr << "Ошибка при отправке сообщения GET_PRIVATE на сервер" << std::endl;
-        std::unique_lock<std::mutex> lock2(private_history_mutex);
+        //std::unique_lock<std::mutex> plock(private_history_mutex);
         waitingForPrivateHistory = false;
         return;
     }
 
     // Wait until receiver notifies that END_OF_HISTORY arrived
-    std::unique_lock<std::mutex> lock(private_history_mutex);
-    private_history_cv.wait(lock, [this]()
+    //std::unique_lock<std::mutex> plock(private_history_mutex);
+    private_history_cv.wait(plock, [this]()
                             { return !waitingForPrivateHistory; });
     // Print the collected private history
     std::lock_guard<std::mutex> iolock(io_mutex);
