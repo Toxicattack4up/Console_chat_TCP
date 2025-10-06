@@ -150,6 +150,11 @@ void Server::handleClient(int clientSocket)
         else
         {
             handleAuthorizedClient(clientSocket, login, message);
+            if (message == "EXIT")
+            {
+                authorized = false;
+                login.clear();
+            }
         }
     }
 }
@@ -162,8 +167,7 @@ void Server::handleClientDisconnect(int clientSocket, bool authorized, const std
     closeClients(clientSocket);
 }
 
-void Server::handleUnauthorizedClient(int clientSocket, const std::string &message,
-                                      bool &authorized, std::string &login)
+void Server::handleUnauthorizedClient(int clientSocket, const std::string &message, bool &authorized, std::string &login)
 {
     if (message.substr(0, 8) == "REGISTER")
     {
@@ -252,28 +256,33 @@ void Server::handleRegistration(int clientSocket, const std::string &message)
     db.logAction("Зарегистрирован новый пользователь: " + login);
 }
 
-void Server::handleAuthorization(int clientSocket, const std::string &message,
-                                 bool &authorized, std::string &login)
+void Server::handleAuthorization(int clientSocket, const std::string &message, bool &authorized, std::string &login)
 {
     std::istringstream iss(message.substr(5));
     std::string login_input, password_input;
     iss >> login_input >> password_input;
 
     db.logAction("Попытка авторизации клиента: " + login_input);
+    std::cout << "Попытка авторизации клиента: " << login_input << std::endl;
 
     std::cout << iss.str() << std::endl;
 
-    if (db.verifyUser(login_input, password_input))
+    if (db.verifyUser(login_input, password_input) == true)
     {
         authorized = true;
         login = login_input;
 
-        std::lock_guard<std::mutex> lock(clientsMutex);
+        //std::lock_guard<std::mutex> lock(clientsMutex);
         // clientLogins[clientSocket] = login;
-        if (db.verifyUser(login_input, password_input) == true)
+        send_line(clientSocket, "AUTH_SUCCESS");
+        logInfo("Клиент авторизован: " + login_input);
+        db.logAction("Клиент авторизован: " + login_input);
+        std::cout << "Клиент авторизован: " << login_input << std::endl;
+
+        /*if (db.verifyUser(login_input, password_input) == true)
         {
             send_line(clientSocket, "AUTH_SUCCESS");
-            logInfo("Client authenticated: " + login_input);
+            logInfo("Клиент авторизован: " + login_input);
             db.logAction("Клиент авторизован: " + login_input);
             std::cout << "Клиент авторизован: " << login_input << std::endl;
         }
@@ -281,17 +290,16 @@ void Server::handleAuthorization(int clientSocket, const std::string &message,
         {
             logError("Error sending AUTH_SUCCESS to client");
             closeClients(clientSocket);
-        }
+        }*/
     }
     else
     {
-        send_line(clientSocket, "AUTH_FAILED: Invalid credentials");
+        send_line(clientSocket, "AUTH_FAILED: Неудачная авторизация");
         db.logAction("Неудачная авторизация: " + login_input);
     }
 }
 
-void Server::handlePublicMessage(int clientSocket, const std::string &login,
-                                 const std::string &message)
+void Server::handlePublicMessage(int clientSocket, const std::string &login, const std::string &message)
 {
     std::string content = message.substr(4);
 
@@ -354,7 +362,8 @@ void Server::handleClientExit(int clientSocket, const std::string &login)
     logInfo("Client requested exit: " + login);
     db.logAction("Клиент запросил выход: " + login);
     std::cout << "Клиент " << login << " вышел из чата" << std::endl;
-    closeClients(clientSocket);
+    //std::lock_guard<std::mutex> lock(clientsMutex);
+    clientLogins.erase(clientSocket);
 }
 
 void Server::handleGetHistory(int clientSocket, const std::string &login)
@@ -425,15 +434,19 @@ void Server::closeClients(int clientSocket)
     {
         clientSockets.erase(it);
         clientLogins.erase(clientSocket);
-#ifdef _WIN32
-        closesocket(clientSocket);
-#else
-        close(clientSocket);
-#endif
+
         logInfo("Client socket closed: " + std::to_string(clientSocket));
     }
 }
 
+void Server::socketClose(int clientSocket)
+{
+#ifdef _WIN32
+    closesocket(clientSocket);
+#else
+    close(clientSocket);
+#endif
+}
 void Server::broadcastMessage(const std::string &message, int senderSocket)
 {
     std::lock_guard<std::mutex> lock(clientsMutex);

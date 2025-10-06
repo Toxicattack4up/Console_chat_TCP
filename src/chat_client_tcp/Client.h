@@ -68,4 +68,5 @@ public:
     void startThread();
     void stopReceivedMessage();
     void disconnect();
+    void logOut();
 };

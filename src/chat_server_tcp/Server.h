@@ -43,9 +43,12 @@ public:
     void run();
     void handleClient(int clientSocket);
     void closeClients(int clientSocket);
+    void socketClose(int clientSocket);
     void broadcastMessage(const std::string &message, int senderSocket);
     void privateMessage(const std::string &sender, const std::string &receiver, const std::string &content, int senderSocket);
 
+
+    
 private:
     void handleClientDisconnect(int clientSocket, bool authorized, const std::string &login);
     void handleUnauthorizedClient(int clientSocket, const std::string &message, bool &authorized, std::string &login);
@@ -59,7 +62,6 @@ private:
     void handleGetHistory(int clientSocket, const std::string &login);
     void handleGetPrivateHistory(int clientSocket, const std::string &login, const std::string &message);
     void handleUnknownCommand(int clientSocket, const std::string &login);
-
     static bool send_line(int sock, const std::string &msg);
     std::string getCurrentTimestamp();
 };

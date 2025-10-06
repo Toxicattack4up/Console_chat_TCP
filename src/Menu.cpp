@@ -5,9 +5,12 @@
 
 static std::string ReadLineLocked(const std::string &prompt = "")
 {
-    std::lock_guard<std::mutex> lock(io_mutex);
+    // std::lock_guard<std::mutex> lock(io_mutex);
     if (!prompt.empty())
+    {
         std::cout << prompt;
+    }
+
     std::string line;
     std::getline(std::cin, line);
     return line;
@@ -93,7 +96,7 @@ void Menu::displayPublicChatHeader()
 
 void Menu::displayHelpCommands(bool isPrivateChat)
 {
-    std::lock_guard<std::mutex> lock(io_mutex);
+    // std::lock_guard<std::mutex> lock(io_mutex);
     std::cout << "\n📋 КОМАНДЫ ЧАТА:" << std::endl;
     std::cout << "──────────────────────────────" << std::endl;
 
@@ -116,10 +119,13 @@ void Menu::displayHelpCommands(bool isPrivateChat)
 
 bool Menu::handleLogin(Client &client)
 {
+    // client.disconnect();
+    // client.connectToServer("127.0.0.1");
+
     std::string login = ReadLineLocked("Логин: ");
     if (login.empty())
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Логин не может быть пустым!" << std::endl;
         return false;
     }
@@ -127,21 +133,21 @@ bool Menu::handleLogin(Client &client)
     std::string password = ReadLineLocked("Пароль: ");
     if (password.empty())
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Пароль не может быть пустым!" << std::endl;
         return false;
     }
 
-    if (client.sendAUTH(login, password))
+    if (client.sendAUTH(login, password) == true)
     {
+        // std::lock_guard<std::mutex> lock(io_mutex);
         current_user = login;
-        std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Успешный вход!" << std::endl;
         return true;
     }
     else
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Неверный логин или пароль!" << std::endl;
         return false;
     }
@@ -152,14 +158,14 @@ bool Menu::handleRegistration(Client &client)
     std::string login = ReadLineLocked("Введите логин: ");
     if (login.empty())
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Логин не может быть пустым!" << std::endl;
         return false;
     }
 
     if (login.find(' ') != std::string::npos)
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Логин не должен содержать пробелы!" << std::endl;
         return false;
     }
@@ -171,7 +177,7 @@ bool Menu::handleRegistration(Client &client)
     }
     else if (name.find(' ') != std::string::npos)
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Имя не должно содержать пробелы!" << std::endl;
         return false;
     }
@@ -179,20 +185,20 @@ bool Menu::handleRegistration(Client &client)
     std::string password = ReadLineLocked("Введите пароль: ");
     if (password.empty())
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Пароль не может быть пустым!" << std::endl;
         return false;
     }
 
     if (client.sendRegister(login, name, password))
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Регистрация успешна!" << std::endl;
         return true;
     }
     else
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Ошибка регистрации! Возможно, логин уже занят." << std::endl;
         return false;
     }
@@ -213,12 +219,12 @@ std::string Menu::selectUserFromList(const std::vector<std::string> &users)
 
     if (availableUsers.empty())
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Нет доступных пользователей для чата!" << std::endl;
         return "";
     }
 
-    std::lock_guard<std::mutex> lock(io_mutex);
+    // std::lock_guard<std::mutex> lock(io_mutex);
     std::cout << "\nДоступные пользователи:" << std::endl;
     std::cout << "──────────────────────────────" << std::endl;
 
@@ -263,7 +269,7 @@ void Menu::handlePrivateChat(Client &client)
     auto users = client.getListOfUsers();
     if (users.empty())
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Нет доступных пользователей!" << std::endl;
         ReadLineLocked("Нажмите Enter для продолжения...");
         return;
@@ -355,7 +361,7 @@ bool Menu::processCommand(Client &client, const std::string &command, const std:
     else if (command == "/users" && context.empty())
     {
         auto users = client.getListOfUsers();
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "\nОнлайн пользователи:" << std::endl;
         for (const auto &user : users)
         {
@@ -369,7 +375,7 @@ bool Menu::processCommand(Client &client, const std::string &command, const std:
     }
     else
     {
-        std::lock_guard<std::mutex> lock(io_mutex);
+        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Неизвестная команда: " << command << std::endl;
     }
     return false;
@@ -378,7 +384,7 @@ bool Menu::processCommand(Client &client, const std::string &command, const std:
 int Menu::RunMenu(Client &client)
 {
     int choice = 0;
-    bool shouldExit = false;
+    RunMenubool = false;
 
     do
     {
@@ -398,7 +404,7 @@ int Menu::RunMenu(Client &client)
         switch (choice)
         {
         case 1:
-            if (handleLogin(client) == true)
+            if (handleLogin(client))
             {
                 UserMenu(client);
             }
@@ -408,24 +414,29 @@ int Menu::RunMenu(Client &client)
             }
             break;
         case 2:
-            if (handleRegistration(client))
+            if (handleRegistration(client) == true)
             {
-                std::lock_guard<std::mutex> lock(io_mutex);
+                // std::lock_guard<std::mutex> lock(io_mutex);
                 std::cout << "Регистрация успешна! Теперь войдите в систему." << std::endl;
+            }
+            else
+            {
+                // std::lock_guard<std::mutex> lock(io_mutex);
+                std::cout << "Ошибка регистрации! Попробуйте снова." << std::endl;
             }
             ReadLineLocked("Нажмите Enter для продолжения...");
             break;
         case 3:
-            shouldExit = true;
+            RunMenubool = true;
+            client.disconnect();
             break;
         default:
-            std::lock_guard<std::mutex> lock(io_mutex);
+            // std::lock_guard<std::mutex> lock(io_mutex);
             std::cout << "Неверный выбор!" << std::endl;
             ReadLineLocked("Нажмите Enter для продолжения...");
             break;
         }
-    } while (!shouldExit);
-
+    } while (!RunMenubool);
     return 0;
 }
 
@@ -433,6 +444,7 @@ int Menu::UserMenu(Client &client)
 {
     int choice = 0;
     bool shouldExit = false;
+    RunMenubool = true;
 
     do
     {
@@ -464,21 +476,23 @@ int Menu::UserMenu(Client &client)
         case 4:
         {
             auto users = client.getListOfUsers();
-            std::lock_guard<std::mutex> lock(io_mutex);
+            // std::lock_guard<std::mutex> lock(io_mutex);
             std::cout << "\nСписок пользователей:" << std::endl;
             for (const auto &user : users)
             {
                 std::cout << " • " << user << std::endl;
             }
-            ReadLineLocked("\nНажмите Enter для продолжения...");
+            ReadLineLocked("Нажмите Enter для продолжения...");
         }
         break;
         case 5:
-            client.disconnect();
+            client.logOut();
+            RunMenubool = false;
+            current_user.clear();
             shouldExit = true;
             break;
         default:
-            std::lock_guard<std::mutex> lock(io_mutex);
+            // std::lock_guard<std::mutex> lock(io_mutex);
             std::cout << "Неверный выбор!" << std::endl;
             ReadLineLocked("Нажмите Enter для продолжения...");
             break;
