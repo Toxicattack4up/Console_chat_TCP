@@ -25,6 +25,7 @@ void Menu::ClearScreen()
 #endif
 }
 
+// Выводит главное меню приложения
 void Menu::displayMainMenu()
 {
     std::cout << "╔══════════════════════════╗" << std::endl;
@@ -36,6 +37,7 @@ void Menu::displayMainMenu()
     std::cout << "╚══════════════════════════╝" << std::endl;
 }
 
+// Выводит меню пользователя после входа
 void Menu::displayUserMenu()
 {
     std::cout << "╔══════════════════════════╗" << std::endl;
@@ -61,6 +63,7 @@ void Menu::displayUserMenu()
     std::cout << "╚══════════════════════════╝" << std::endl;
 }
 
+// Заголовок приватного чата с указанным собеседником
 void Menu::displayPrivateChatHeader(const std::string &receiver)
 {
     ClearScreen();
@@ -84,6 +87,7 @@ void Menu::displayPrivateChatHeader(const std::string &receiver)
     std::cout << "──────────────────────────────" << std::endl;
 }
 
+// Заголовок общего чата
 void Menu::displayPublicChatHeader()
 {
     ClearScreen();
@@ -94,6 +98,7 @@ void Menu::displayPublicChatHeader()
     std::cout << "──────────────────────────────" << std::endl;
 }
 
+// Справка по доступным командам в чате
 void Menu::displayHelpCommands(bool isPrivateChat)
 {
     // std::lock_guard<std::mutex> lock(io_mutex);
@@ -117,15 +122,12 @@ void Menu::displayHelpCommands(bool isPrivateChat)
     std::cout << "──────────────────────────────" << std::endl;
 }
 
+// Обработка авторизации пользователя
 bool Menu::handleLogin(Client &client)
 {
-    // client.disconnect();
-    // client.connectToServer("127.0.0.1");
-
     std::string login = ReadLineLocked("Логин: ");
     if (login.empty())
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Логин не может быть пустым!" << std::endl;
         return false;
     }
@@ -133,39 +135,39 @@ bool Menu::handleLogin(Client &client)
     std::string password = ReadLineLocked("Пароль: ");
     if (password.empty())
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Пароль не может быть пустым!" << std::endl;
         return false;
     }
 
     if (client.sendAUTH(login, password) == true)
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         current_user = login;
+        // Запускаем поток чтения после успешного входа
+        client.startThread();
+        // Разрешаем приёму сообщений
+        // (running флаг устанавливается в Client::startThread)
         std::cout << "Успешный вход!" << std::endl;
         return true;
     }
     else
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Неверный логин или пароль!" << std::endl;
         return false;
     }
 }
 
+// Обработка регистрации нового пользователя
 bool Menu::handleRegistration(Client &client)
 {
     std::string login = ReadLineLocked("Введите логин: ");
     if (login.empty())
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Логин не может быть пустым!" << std::endl;
         return false;
     }
 
     if (login.find(' ') != std::string::npos)
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Логин не должен содержать пробелы!" << std::endl;
         return false;
     }
@@ -177,7 +179,6 @@ bool Menu::handleRegistration(Client &client)
     }
     else if (name.find(' ') != std::string::npos)
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Имя не должно содержать пробелы!" << std::endl;
         return false;
     }
@@ -185,29 +186,26 @@ bool Menu::handleRegistration(Client &client)
     std::string password = ReadLineLocked("Введите пароль: ");
     if (password.empty())
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Пароль не может быть пустым!" << std::endl;
         return false;
     }
 
     if (client.sendRegister(login, name, password))
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Регистрация успешна!" << std::endl;
         return true;
     }
     else
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Ошибка регистрации! Возможно, логин уже занят." << std::endl;
         return false;
     }
 }
 
+// Выбор собеседника из списка пользователей
 std::string Menu::selectUserFromList(const std::vector<std::string> &users)
 {
     std::vector<std::string> availableUsers;
-
     // Фильтруем пользователей, исключая текущего
     for (const auto &user : users)
     {
@@ -219,12 +217,10 @@ std::string Menu::selectUserFromList(const std::vector<std::string> &users)
 
     if (availableUsers.empty())
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Нет доступных пользователей для чата!" << std::endl;
         return "";
     }
 
-    // std::lock_guard<std::mutex> lock(io_mutex);
     std::cout << "\nДоступные пользователи:" << std::endl;
     std::cout << "──────────────────────────────" << std::endl;
 
@@ -264,12 +260,12 @@ std::string Menu::selectUserFromList(const std::vector<std::string> &users)
     return "";
 }
 
+// Цикл приватного чата с выбранным пользователем
 void Menu::handlePrivateChat(Client &client)
 {
     auto users = client.getListOfUsers();
     if (users.empty())
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Нет доступных пользователей!" << std::endl;
         ReadLineLocked("Нажмите Enter для продолжения...");
         return;
@@ -297,11 +293,11 @@ void Menu::handlePrivateChat(Client &client)
             }
             continue;
         }
-
         processPrivateMessage(client, receiver, message);
     }
 }
 
+// Цикл общего чата
 void Menu::handlePublicChat(Client &client)
 {
     displayPublicChatHeader();
@@ -327,16 +323,19 @@ void Menu::handlePublicChat(Client &client)
     }
 }
 
+// Отправка приватного сообщения
 void Menu::processPrivateMessage(Client &client, const std::string &receiver, const std::string &message)
 {
     client.sendPrivate(current_user, receiver, message);
 }
 
+// Отправка сообщения в общий чат
 void Menu::processPublicMessage(Client &client, const std::string &message)
 {
     client.sendToAll(message);
 }
 
+// Обработка команд /exit, /help, /history, /users, /quit
 bool Menu::processCommand(Client &client, const std::string &command, const std::string &context)
 {
     if (command == "/exit")
@@ -361,7 +360,6 @@ bool Menu::processCommand(Client &client, const std::string &command, const std:
     else if (command == "/users" && context.empty())
     {
         auto users = client.getListOfUsers();
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "\nОнлайн пользователи:" << std::endl;
         for (const auto &user : users)
         {
@@ -375,12 +373,12 @@ bool Menu::processCommand(Client &client, const std::string &command, const std:
     }
     else
     {
-        // std::lock_guard<std::mutex> lock(io_mutex);
         std::cout << "Неизвестная команда: " << command << std::endl;
     }
     return false;
 }
 
+// Главный цикл: показ главного меню
 int Menu::RunMenu(Client &client)
 {
     int choice = 0;
@@ -416,12 +414,10 @@ int Menu::RunMenu(Client &client)
         case 2:
             if (handleRegistration(client) == true)
             {
-                // std::lock_guard<std::mutex> lock(io_mutex);
                 std::cout << "Регистрация успешна! Теперь войдите в систему." << std::endl;
             }
             else
             {
-                // std::lock_guard<std::mutex> lock(io_mutex);
                 std::cout << "Ошибка регистрации! Попробуйте снова." << std::endl;
             }
             ReadLineLocked("Нажмите Enter для продолжения...");
@@ -431,7 +427,6 @@ int Menu::RunMenu(Client &client)
             client.disconnect();
             break;
         default:
-            // std::lock_guard<std::mutex> lock(io_mutex);
             std::cout << "Неверный выбор!" << std::endl;
             ReadLineLocked("Нажмите Enter для продолжения...");
             break;
@@ -440,6 +435,7 @@ int Menu::RunMenu(Client &client)
     return 0;
 }
 
+// Цикл меню пользователя (после авторизации)
 int Menu::UserMenu(Client &client)
 {
     int choice = 0;
@@ -471,18 +467,17 @@ int Menu::UserMenu(Client &client)
             break;
         case 3:
             client.requestHistory();
-            ReadLineLocked("Нажмите Enter для продолжения...");
+            ReadLineLocked("\nНажмите Enter для возврата в меню...");
             break;
         case 4:
         {
             auto users = client.getListOfUsers();
-            // std::lock_guard<std::mutex> lock(io_mutex);
             std::cout << "\nСписок пользователей:" << std::endl;
             for (const auto &user : users)
             {
                 std::cout << " • " << user << std::endl;
             }
-            ReadLineLocked("Нажмите Enter для продолжения...");
+            ReadLineLocked("\nНажмите Enter для возврата в меню...");
         }
         break;
         case 5:
@@ -490,11 +485,11 @@ int Menu::UserMenu(Client &client)
             RunMenubool = false;
             current_user.clear();
             shouldExit = true;
+            std::cout << "\nВы вышли из аккаунта. Возврат в главное меню..." << std::endl;
             break;
         default:
-            // std::lock_guard<std::mutex> lock(io_mutex);
-            std::cout << "Неверный выбор!" << std::endl;
-            ReadLineLocked("Нажмите Enter для продолжения...");
+            std::cout << "Неверный выбор. Введите число от 1 до 5." << std::endl;
+            ReadLineLocked("Нажмите Enter, чтобы повторить ввод...");
             break;
         }
     } while (!shouldExit);
@@ -502,6 +497,7 @@ int Menu::UserMenu(Client &client)
     return 0;
 }
 
+// Утилита: показать все сообщения общего чата
 int Menu::ShowAllMessages(Client &client)
 {
     handlePublicChat(client);

@@ -64,7 +64,7 @@ Server::Server() : db("tcp_chat.db")
 
     logInfo("Сервер запущен на порту 12345");
     db.logAction("Сервер запущен на порту 12345");
-    std::cout << "Сервер запущен на порту 12345" << std::endl;
+    std::cout << "[SERVER] Сервер запущен на порту 12345" << std::endl;
 }
 
 Server::~Server()
@@ -106,6 +106,7 @@ void Server::run()
         inet_ntop(AF_INET, &clientAddr.sin_addr, clientIP, INET_ADDRSTRLEN);
 
         db.logAction(std::string("Клиент подключен: ") + std::to_string(clientSocket) + " с IP " + clientIP);
+        std::cout << "[SERVER] Клиент подключен: сокет=" << clientSocket << ", IP=" << clientIP << std::endl;
 
         std::lock_guard<std::mutex> lock(clientsMutex);
         clientSockets.push_back(clientSocket);
@@ -124,9 +125,9 @@ void Server::handleClient(int clientSocket)
         memset(buffer, 0, sizeof(buffer));
         int rec = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
 
+        // Получено сообщение от клиента; подробности выводим только по событиям ниже
         logInfo("Получено сообщение от клиента " + std::to_string(clientSocket));
         db.logAction("Получено сообщение от клиента " + std::to_string(clientSocket));
-        std::cout << "Подключился клиент " << clientSocket << ": " << buffer << std::endl;
 
         if (rec <= 0)
         {
@@ -161,9 +162,10 @@ void Server::handleClient(int clientSocket)
 
 void Server::handleClientDisconnect(int clientSocket, bool authorized, const std::string &login)
 {
-    std::string logMsg = "Client disconnected: " + (authorized ? login : std::to_string(clientSocket));
-    logInfo(logMsg);
-    db.logAction("Клиент отключен: " + (authorized ? login : std::to_string(clientSocket)));
+    std::string who = authorized ? login : std::to_string(clientSocket);
+    logInfo("Client disconnected: " + who);
+    db.logAction("Клиент отключен: " + who);
+    std::cout << "[SERVER] Клиент отключен: " << who << std::endl;
     closeClients(clientSocket);
 }
 
@@ -185,6 +187,7 @@ void Server::handleUnauthorizedClient(int clientSocket, const std::string &messa
             db.logAction("Ошибка отправки запроса авторизации клиенту " + std::to_string(clientSocket));
             closeClients(clientSocket);
         }
+        std::cout << "[SERVER] Неавторизованная команда от сокета " << clientSocket << std::endl;
     }
 }
 
@@ -231,7 +234,7 @@ void Server::handleRegistration(int clientSocket, const std::string &message)
     if (login.empty() || name.empty() || password.empty())
     {
         send_line(clientSocket, "REGISTER_FAILED: All fields required");
-        std::cout << "Регистрация не удалась: все поля обязательны" << std::endl;
+        std::cout << "[SERVER] Регистрация отклонена: пустые поля" << std::endl;
         db.logAction("Регистрация не удалась: все поля обязательны");
         return;
     }
@@ -239,7 +242,7 @@ void Server::handleRegistration(int clientSocket, const std::string &message)
     if (login.length() < 3 || password.length() < 3)
     {
         send_line(clientSocket, "REGISTER_FAILED: Login and password must be at least 3 characters");
-        std::cout << "Регистрация не удалась: логин и пароль должны быть не менее 3 символов" << std::endl;
+        std::cout << "[SERVER] Регистрация отклонена: логин/пароль < 3 символов" << std::endl;
         db.logAction("Регистрация не удалась: логин и пароль должны быть не менее 3 символов");
         return;
     }
@@ -252,7 +255,7 @@ void Server::handleRegistration(int clientSocket, const std::string &message)
 
     db.addUser(login, name, password);
     send_line(clientSocket, "REGISTER_SUCCESS");
-    std::cout << "Зарегистрирован новый пользователь: " << login << std::endl;
+    std::cout << "[SERVER] Зарегистрирован новый пользователь: " << login << std::endl;
     db.logAction("Зарегистрирован новый пользователь: " + login);
 }
 
@@ -263,39 +266,28 @@ void Server::handleAuthorization(int clientSocket, const std::string &message, b
     iss >> login_input >> password_input;
 
     db.logAction("Попытка авторизации клиента: " + login_input);
-    std::cout << "Попытка авторизации клиента: " << login_input << std::endl;
-
-    std::cout << iss.str() << std::endl;
+    std::cout << "[SERVER] Попытка авторизации: login='" << login_input << "'" << std::endl;
 
     if (db.verifyUser(login_input, password_input) == true)
     {
         authorized = true;
         login = login_input;
 
-        //std::lock_guard<std::mutex> lock(clientsMutex);
-        // clientLogins[clientSocket] = login;
+        // Привязываем сокет клиента к его логину для доставки приватных сообщений
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex);
+            clientLogins[clientSocket] = login;
+        }
         send_line(clientSocket, "AUTH_SUCCESS");
         logInfo("Клиент авторизован: " + login_input);
         db.logAction("Клиент авторизован: " + login_input);
-        std::cout << "Клиент авторизован: " << login_input << std::endl;
-
-        /*if (db.verifyUser(login_input, password_input) == true)
-        {
-            send_line(clientSocket, "AUTH_SUCCESS");
-            logInfo("Клиент авторизован: " + login_input);
-            db.logAction("Клиент авторизован: " + login_input);
-            std::cout << "Клиент авторизован: " << login_input << std::endl;
-        }
-        else
-        {
-            logError("Error sending AUTH_SUCCESS to client");
-            closeClients(clientSocket);
-        }*/
+        std::cout << "[SERVER] Авторизация успешна: " << login_input << std::endl;
     }
     else
     {
         send_line(clientSocket, "AUTH_FAILED: Неудачная авторизация");
         db.logAction("Неудачная авторизация: " + login_input);
+        std::cout << "[SERVER] Авторизация отклонена: " << login_input << std::endl;
     }
 }
 
@@ -309,6 +301,7 @@ void Server::handlePublicMessage(int clientSocket, const std::string &login, con
     // Рассылаем всем
     std::string formattedContent = getCurrentTimestamp() + " [" + login + "] " + content;
     broadcastMessage(formattedContent, clientSocket);
+    std::cout << "[SERVER] Публичное сообщение от '" << login << "'" << std::endl;
 }
 
 void Server::handlePrivateMessage(int clientSocket, const std::string &login,
@@ -323,6 +316,7 @@ void Server::handlePrivateMessage(int clientSocket, const std::string &login,
     if (receiver.empty())
     {
         send_line(clientSocket, "PRIVATE_FAILED: Receiver required");
+        std::cout << "[SERVER] Приватное сообщение отклонено: отсутствует получатель" << std::endl;
         return;
     }
 
@@ -330,6 +324,7 @@ void Server::handlePrivateMessage(int clientSocket, const std::string &login,
     if (db.getUserId(receiver) == -1)
     {
         send_line(clientSocket, "PRIVATE_FAILED: User not found");
+        std::cout << "[SERVER] Приватное сообщение отклонено: пользователь не найден" << std::endl;
         return;
     }
 
@@ -338,6 +333,7 @@ void Server::handlePrivateMessage(int clientSocket, const std::string &login,
 
     // Отправляем приватное сообщение
     privateMessage(login, receiver, content, clientSocket);
+    std::cout << "[SERVER] Приватное сообщение от '" << login << "' к '" << receiver << "'" << std::endl;
 }
 
 void Server::handleGetUsers(int clientSocket, const std::string &login)
@@ -361,8 +357,7 @@ void Server::handleClientExit(int clientSocket, const std::string &login)
 {
     logInfo("Client requested exit: " + login);
     db.logAction("Клиент запросил выход: " + login);
-    std::cout << "Клиент " << login << " вышел из чата" << std::endl;
-    //std::lock_guard<std::mutex> lock(clientsMutex);
+    std::cout << "[SERVER] Пользователь ‘" << login << "’ запросил выход" << std::endl;
     clientLogins.erase(clientSocket);
 }
 

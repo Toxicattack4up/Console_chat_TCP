@@ -10,27 +10,32 @@
 class ChatDB
 {
 public:
+    // Открывает/создаёт файл БД и готовит таблицы
     ChatDB(const std::string &ChatDB_name);
     ChatDB() = delete;
     ChatDB(const ChatDB &) = delete;
     ChatDB &operator=(const ChatDB &) = delete;
     ~ChatDB();
 
-    void addMessage(const std::string &sender, const std::string &receiver, const std::string &content); // фиксация сообщения в БД
-    std::vector<std::string> getMessages(const std::string &user1, const std::string &user2);            // получение списка сообщений общего чата
-    std::vector<std::string> getPublicMessages();                                                        // сообщения общего чата
+    // Сохраняет сообщение (receiver пустой — сообщение общего чата)
+    void addMessage(const std::string &sender, const std::string &receiver, const std::string &content);
+    // Возвращает переписку между двумя пользователями
+    std::vector<std::string> getMessages(const std::string &user1, const std::string &user2);
+    // Возвращает историю общего чата
+    std::vector<std::string> getPublicMessages();
 
+    // Возвращает id пользователя по логину (или -1)
     int getUserId(const std::string &login);
-    // добавление пользователя в БД
+    // Добавляет пользователя
     void addUser(const std::string &login, const std::string &name, const std::string &password);
-    // проверка пользователя в БД
+    // Проверяет логин/пароль
     bool verifyUser(const std::string &login, const std::string &password);
-    // получение истории сообщений
+    // Возвращает список собеседников и время последнего сообщения
     std::vector<std::string> getUserMessages(const std::string &login);
-    // получение списка пользователей
+    // Возвращает список логинов
     std::vector<std::string> getUserList();
 
-    // Логирование действий
+    // Записывает событие в таблицу логов
     void logAction(const std::string &action);
 
 private:

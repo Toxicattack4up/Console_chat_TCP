@@ -8,6 +8,9 @@ if(WIN32)
     add_definitions(-DWIN32_LEAN_AND_MEAN)
 endif()
 
+# Найдём SQLite3 (для Windows рекомендуется установить через пакетный менеджер, напр. vcpkg)
+find_package(SQLite3 REQUIRED)
+
 # Общие include
 include_directories(include)
 
@@ -37,13 +40,23 @@ add_executable(tcp_chat_server
     src/common.cpp
 )
 
-target_link_libraries(tcp_chat_server PRIVATE chat_server)
+target_link_libraries(tcp_chat_server PRIVATE chat_server SQLite::SQLite3)
+
+# Сетевые библиотеки под Windows
+if(WIN32)
+    target_link_libraries(tcp_chat_client PRIVATE ws2_32)
+    target_link_libraries(tcp_chat_server PRIVATE ws2_32)
+endif()
 
 # ==== База данных (копирование после сборки клиента) ====
-if(UNIX)
+# Копирование базы данных (если присутствует в проекте)
+if(EXISTS ${CMAKE_SOURCE_DIR}/database/tcp_chat.db)
+    add_custom_command(TARGET tcp_chat_server POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_SOURCE_DIR}/database/tcp_chat.db
+        ${CMAKE_BINARY_DIR}/tcp_chat.db)
     add_custom_command(TARGET tcp_chat_client POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_SOURCE_DIR}/database/tcp_chat.db
-        ${CMAKE_BINARY_DIR}/tcp_chat.db
-    )
+        ${CMAKE_BINARY_DIR}/tcp_chat.db)
 endif()

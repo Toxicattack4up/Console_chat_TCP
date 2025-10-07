@@ -23,13 +23,15 @@
 #include <unistd.h>
 #endif
 
+// Клиент TCP-чата: подключение/авторизация и обмен сообщениями
 class Client
 {
 private:
     int clientSock;
     int serverPort = 12345;
+    std::string serverIp;
     bool isThreadRunning = false;
-    bool running = true;
+    bool running = false;
     static const size_t BUFFER_SIZE = 2048;
     bool waitingForHistory = false;
     std::vector<std::string> historyLines;
@@ -53,20 +55,38 @@ private:
     std::string incomingBuffer;
 
 public:
+    // Инициализация клиента
     Client();
+    // Завершение работы
     ~Client();
+    // Регистрация пользователя
     bool sendRegister(const std::string &login, const std::string &username, const std::string &password);
+    // Подключение к серверу по IPv4
     void connectToServer(const std::string &ip_to_server);
+    // Гарантированное подключение (переподключение при необходимости)
+    bool ensureConnected();
+    // Печать статуса подключения
     void isConnected();
+    // Получение списка пользователей
     std::vector<std::string> getListOfUsers();
+    // Авторизация
     bool sendAUTH(const std::string &login, const std::string &password);
+    // Сообщение в общий чат
     bool sendToAll(const std::string &message);
+    // Приватное сообщение пользователю
     void sendPrivate(const std::string &sender, const std::string &receiver, const std::string &message);
+    // История общего чата
     void requestHistory();
+    // История приватной переписки
     void requestPrivateHistory(const std::string &other);
+    // Цикл приёма сообщений (фон)
     void receiveMessages();
+    // Запуск фонового приёма
     void startThread();
+    // Остановка фонового приёма
     void stopReceivedMessage();
+    // Разрыв соединения
     void disconnect();
+    // Отправка выхода и остановка приёма
     void logOut();
 };

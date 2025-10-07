@@ -45,75 +45,38 @@ ChatDB::~ChatDB()
     logAction("Закрыли базу");
     sqlite3_close(db);
 }
-/*int callback(void *NotUsed, int argc, char **argv, char **azColName) {
-    for(int i = 0; i < argc; i++) {
-        std::cout << azColName[i] << ": " << (argv[i] ? argv[i] : "NULL") << std::endl;
-    }
-    std::cout << std::endl;
-    return 0;
-}*/
+// Вспомогательные функции SQLite через API sqlite3_prepare/step/finalize
 
 int ChatDB::getUserId(const std::string &login)
 {
-    // char* errMsg;
-    std::lock_guard<std::mutex> lock(ChatDB Mutex);
+    std::lock_guard<std::mutex> lock(ChatDBMutex);
 
     sqlite3_stmt *stmt;
     int userId = -1;
 
     const char *sql = "SELECT id FROM users WHERE login = ?;";
 
-    /*if (sqlite3_exec(ChatDB , sql.c_str(), callback, &userId, &errMsg) != SQLITE_OK)
-    {
-        std::cerr << "Error " << errMsg << std::endl;
-        sqlite3_free(errMsg);
-        return -1;
-    } else {
-        std::cout << "Все найс едем дальше" << std::endl;
-    }
-    */
-
-    /*sqlite3_prepare_v2(
-        sqlite3* ChatDB , - база данных
-        const char *zSql, - текст в виде строки char
-        int nByte, - длина передаваемой строки
-        sqlite3_stmt **ppStmt, - указатель на подготовленное выражение stmt
-        const char **pzTail); - указатель на остаток строки после SQL выражения
-
-        Последовательность добавления команд
-        1. sqlite3_prepare_v2 - подготовка SQL выражения
-        2. sqlite3_bind_text - привязка параметров
-        3. sqlite3_step - выполнение подготовленного выражения
-        4. sqlite3_column_int - получение значения столбца
-        5. sqlite3_finalize - освобождение ресурсов
-    */
+    // Подготавливаем и выполняем простое выражение SELECT id
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
     {
         std::cerr << "Ошибка подготовки: " << sqlite3_errmsg(db) << std::endl;
         return -1;
     }
-    // std::cout << "Выполнили подготовку строки с сырым значением" << std::endl;
-
     sqlite3_bind_text(stmt, 1, login.c_str(), -1, SQLITE_STATIC);
-    // std::cout << "Положили в строку искомое значение" << std::endl;
 
-    if (sqlite3_step(stmt) /*выполение команды*/ == SQLITE_ROW)
+    if (sqlite3_step(stmt) == SQLITE_ROW)
     {
         userId = sqlite3_column_int(stmt, 0);
     }
-    // std::cout << "Сделали поиск и привязку значения к переменной" << std::endl;
-
-    sqlite3_finalize(stmt); // освободили ресурсы
-    // std::cout << "освободили ресурсы" << std::endl;
-    // std::cout << "значение переменной userID " << userId << std::endl;
+    sqlite3_finalize(stmt);
     logAction("Получили id пользователя с ником " + login);
     return userId;
 }
 
 void ChatDB ::addMessage(const std::string &sender, const std::string &receiver, const std::string &content)
 {
-    std::lock_guard<std::mutex> lock(ChatDB Mutex);
+    std::lock_guard<std::mutex> lock(ChatDBMutex);
     sqlite3_stmt *stmt;
 
     const char *sql = "INSERT INTO messages (user_id, receiver_id, message, timestamp) \
@@ -149,7 +112,6 @@ void ChatDB ::addMessage(const std::string &sender, const std::string &receiver,
     }
 
     sqlite3_finalize(stmt);
-    // std::cout << "освободили ресурсы" << std::endl;
     logAction("Добавили сообщение пользователей " + sender + " и" + receiver + ", текст сообщения " + content);
     return;
 }
@@ -158,7 +120,7 @@ std::vector<std::string> ChatDB::getMessages(const std::string &user1, const std
 {
     if (user1.empty() || user2.empty())
         return {};
-    std::lock_guard<std::mutex> lock(ChatDB Mutex);
+    std::lock_guard<std::mutex> lock(ChatDBMutex);
     std::vector<std::string> messages;
     sqlite3_stmt *stmt;
 
@@ -204,7 +166,7 @@ std::vector<std::string> ChatDB::getMessages(const std::string &user1, const std
 
 std::vector<std::string> ChatDB ::getPublicMessages()
 {
-    std::lock_guard<std::mutex> lock(ChatDB Mutex);
+    std::lock_guard<std::mutex> lock(ChatDBMutex);
     std::vector<std::string> messages;
     sqlite3_stmt *stmt;
 
@@ -288,9 +250,7 @@ bool ChatDB::verifyUser(const std::string &login, const std::string &password)
         return false;
     }
 
-    // std::cout << "Выполнили подготовку строки с сырым значением" << std::endl;
     sqlite3_bind_text(stmt, 1, login.c_str(), -1, SQLITE_STATIC);
-    // std::cout << "Положили в строку искомое значение" << std::endl;
 
     if (sqlite3_step(stmt) == SQLITE_ROW)
     {
@@ -303,7 +263,6 @@ bool ChatDB::verifyUser(const std::string &login, const std::string &password)
             std::string hash_password = std::to_string(hash_value);
 
             sqlite3_finalize(stmt);
-            // std::cout << "освободили ресурсы" << std::endl;
             logAction("Проверили пользователя " + login);
             std::cout << "Проверили пользователя " << login << std::endl;
             return true;
@@ -318,7 +277,7 @@ bool ChatDB::verifyUser(const std::string &login, const std::string &password)
 
 std::vector<std::string> ChatDB ::getUserMessages(const std::string &login)
 {
-    std::lock_guard<std::mutex> lock(ChatDB Mutex);
+    std::lock_guard<std::mutex> lock(ChatDBMutex);
     sqlite3_stmt *stmt;
     std::vector<std::string> messages;
 
@@ -408,13 +367,9 @@ void ChatDB ::logAction(const std::string &action)
         std::cerr << "Ошибка подготовки: " << std::endl;
         return;
     }
-    // std::cout << "Выполнили подготовку строки с сырым значением" << std::endl;
 
     sqlite3_bind_text(stmt, 1, action.c_str(), -1, SQLITE_STATIC);
-    // std::cout << "Положили в строку искомое значение" << std::endl;
-
-    sqlite3_step(stmt);     /*выполение команд*/
-    sqlite3_finalize(stmt); // освободили ресурсы
-    // std::cout << "освободили ресурсы" << std::endl;
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
     return;
 }
