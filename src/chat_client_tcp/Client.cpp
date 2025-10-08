@@ -1,5 +1,4 @@
 #include "Client.h"
-#include <cerrno>
 
 Client::Client()
 {

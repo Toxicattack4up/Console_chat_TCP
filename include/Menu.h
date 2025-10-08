@@ -1,6 +1,9 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <iostream>
+#include <string>
+#include "common.h"
 #include "../src/chat_client_tcp/Client.h"
 
 class Menu

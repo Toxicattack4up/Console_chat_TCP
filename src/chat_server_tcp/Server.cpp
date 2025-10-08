@@ -3,7 +3,7 @@
 bool Server::send_line(int sock, const std::string &msg)
 {
     std::string out = msg + "\n";
-    ssize_t r = send(sock, out.c_str(), out.size(), 0);
+    size_t r = send(sock, out.c_str(), out.size(), 0);
     return r >= 0;
 }
 
@@ -40,8 +40,7 @@ Server::Server() : db("tcp_chat.db")
         exit(1);
     }
 
-    int opt = 1;
-    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+    if (sock < 0)
     {
         std::cerr << "Warning: setsockopt(SO_REUSEADDR) failed: " << strerror(errno) << std::endl;
     }
