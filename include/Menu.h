@@ -8,6 +8,7 @@
 
 class Menu
 {
+    
 private:
     std::string current_user; // Текущий вошедший пользователь
     bool RunMenubool = false;
