@@ -4,8 +4,8 @@
 #include <mutex>
 #include <vector>
 #include <iostream>
-#include <functional>
 #include <sstream>
+#include <stdexcept>
 
 class ChatDB
 {
@@ -26,8 +26,8 @@ public:
 
     // Возвращает id пользователя по логину (или -1)
     int getUserId(const std::string &login);
-    // Добавляет пользователя
-    void addUser(const std::string &login, const std::string &name, const std::string &password);
+    // Добавляет пользователя (пароль хранится как libsodium crypto_pwhash_str)
+    bool addUser(const std::string &login, const std::string &name, const std::string &password);
     // Проверяет логин/пароль
     bool verifyUser(const std::string &login, const std::string &password);
     // Возвращает список собеседников и время последнего сообщения
@@ -40,5 +40,5 @@ public:
 
 private:
     sqlite3 *db = nullptr;
-    std::mutex ChatDBMutex;
+    std::recursive_mutex ChatDBMutex;
 };

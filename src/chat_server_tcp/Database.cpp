@@ -1,4 +1,45 @@
 #include "Database.h"
+#include <sodium.h>
+
+namespace
+{
+bool ensureSodium()
+{
+    static const bool ok = (sodium_init() >= 0);
+    return ok;
+}
+
+std::string hashPassword(const std::string &password)
+{
+    if (!ensureSodium())
+    {
+        throw std::runtime_error("libsodium init failed");
+    }
+
+    char hashed[crypto_pwhash_STRBYTES];
+    if (crypto_pwhash_str(hashed, password.c_str(), password.size(),
+                          crypto_pwhash_OPSLIMIT_INTERACTIVE,
+                          crypto_pwhash_MEMLIMIT_INTERACTIVE) != 0)
+    {
+        throw std::runtime_error("password hashing failed");
+    }
+    return std::string(hashed);
+}
+
+bool verifyPassword(const std::string &password, const std::string &stored)
+{
+    if (!ensureSodium())
+    {
+        return false;
+    }
+    // libsodium hashes start with "$argon2"; legacy demo hashes were decimal std::hash
+    if (stored.rfind("$argon2", 0) != 0)
+    {
+        return false;
+    }
+    return crypto_pwhash_str_verify(stored.c_str(), password.c_str(), password.size()) == 0;
+}
+} // namespace
 
 ChatDB::ChatDB(const std::string &ChatDB_name)
 {
@@ -36,24 +77,27 @@ ChatDB::ChatDB(const std::string &ChatDB_name)
     sqlite3_exec(db, createMessages, nullptr, nullptr, nullptr);
     sqlite3_exec(db, createLogs, nullptr, nullptr, nullptr);
 
-    logAction("Открыли базу " + ChatDB_name);
-    std::cout << "Открыли базу " << ChatDB_name << std::endl;
+    logAction("Opened database " + ChatDB_name);
 }
 
 ChatDB::~ChatDB()
 {
-    logAction("Закрыли базу");
-    sqlite3_close(db);
+    if (db)
+    {
+        logAction("Closed database");
+        sqlite3_close(db);
+        db = nullptr;
+    }
 }
-// Вспомогательные функции SQLite через API sqlite3_prepare/step/finalize
+
 int ChatDB::getUserId(const std::string &login)
 {
+    std::lock_guard<std::recursive_mutex> lock(ChatDBMutex);
     sqlite3_stmt *stmt;
     int userId = -1;
 
     const char *sql = "SELECT id FROM users WHERE login = ?;";
 
-    // Подготавливаем и выполняем простое выражение SELECT id
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
     {
         std::cerr << "Ошибка подготовки: " << sqlite3_errmsg(db) << std::endl;
@@ -66,12 +110,12 @@ int ChatDB::getUserId(const std::string &login)
         userId = sqlite3_column_int(stmt, 0);
     }
     sqlite3_finalize(stmt);
-    logAction("Получили id пользователя с ником " + login);
     return userId;
 }
 
-void ChatDB ::addMessage(const std::string &sender, const std::string &receiver, const std::string &content)
+void ChatDB::addMessage(const std::string &sender, const std::string &receiver, const std::string &content)
 {
+    std::lock_guard<std::recursive_mutex> lock(ChatDBMutex);
     sqlite3_stmt *stmt;
 
     const char *sql = "INSERT INTO messages (user_id, receiver_id, message, timestamp) \
@@ -97,24 +141,21 @@ void ChatDB ::addMessage(const std::string &sender, const std::string &receiver,
 
     sqlite3_bind_text(stmt, 3, content.c_str(), -1, SQLITE_STATIC);
 
-    if (sqlite3_step(stmt) == SQLITE_DONE)
-    {
-        std::cout << "Сообщение успешно добавлено" << std::endl;
-    }
-    else
+    if (sqlite3_step(stmt) != SQLITE_DONE)
     {
         std::cerr << "Ошибка добавления сообщения: " << sqlite3_errmsg(db) << std::endl;
     }
 
     sqlite3_finalize(stmt);
-    logAction("Добавили сообщение пользователей " + sender + " и" + receiver + ", текст сообщения " + content);
-    return;
+    // Do not log message body (privacy).
+    logAction("Added message from " + sender + (receiver.empty() ? " (public)" : (" to " + receiver)));
 }
 
 std::vector<std::string> ChatDB::getMessages(const std::string &user1, const std::string &user2)
 {
     if (user1.empty() || user2.empty())
         return {};
+    std::lock_guard<std::recursive_mutex> lock(ChatDBMutex);
     std::vector<std::string> messages;
     sqlite3_stmt *stmt;
 
@@ -154,12 +195,12 @@ std::vector<std::string> ChatDB::getMessages(const std::string &user1, const std
     }
 
     sqlite3_finalize(stmt);
-    logAction("Получили список сообщений пользователей " + user1 + ", " + user2);
     return messages;
 }
 
-std::vector<std::string> ChatDB ::getPublicMessages()
+std::vector<std::string> ChatDB::getPublicMessages()
 {
+    std::lock_guard<std::recursive_mutex> lock(ChatDBMutex);
     std::vector<std::string> messages;
     sqlite3_stmt *stmt;
 
@@ -188,47 +229,54 @@ std::vector<std::string> ChatDB ::getPublicMessages()
     }
 
     sqlite3_finalize(stmt);
-    logAction("Получили историю общего чата");
     return messages;
 }
 
-void ChatDB::addUser(const std::string &login, const std::string &name, const std::string &password)
+bool ChatDB::addUser(const std::string &login, const std::string &name, const std::string &password)
 {
+    std::lock_guard<std::recursive_mutex> lock(ChatDBMutex);
     sqlite3_stmt *stmt;
 
-    std::string password_salt = "strong_salt_12345" + password;
-    std::hash<std::string> hash;
-
-    size_t hash_value = hash(password_salt);
-    std::string hash_password = std::to_string(hash_value);
+    std::string hash_password;
+    try
+    {
+        hash_password = hashPassword(password);
+    }
+    catch (const std::exception &ex)
+    {
+        std::cerr << "Ошибка хеширования пароля: " << ex.what() << std::endl;
+        return false;
+    }
 
     const char *sql = "INSERT INTO users (login, username, password) VALUES (?, ?, ?);";
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
     {
         std::cerr << "Ошибка подготовки: " << sqlite3_errmsg(db) << std::endl;
-        return;
+        return false;
     }
 
     sqlite3_bind_text(stmt, 1, login.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, hash_password.c_str(), -1, SQLITE_STATIC);
 
-    if (sqlite3_step(stmt) != SQLITE_DONE)
+    const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+    if (!ok)
     {
         std::cerr << "Ошибка добавления пользователя: " << sqlite3_errmsg(db) << std::endl;
     }
-    else
-    {
-        std::cout << "Пользователь успешно добавлен" << std::endl;
-    }
 
     sqlite3_finalize(stmt);
-    logAction("Добавили пользователя с логином " + login + " и именем " + name);
+    if (ok)
+    {
+        logAction("Added user " + login);
+    }
+    return ok;
 }
 
 bool ChatDB::verifyUser(const std::string &login, const std::string &password)
 {
+    std::lock_guard<std::recursive_mutex> lock(ChatDBMutex);
     sqlite3_stmt *stmt;
 
     const char *sql = "SELECT password FROM users WHERE login = ?;";
@@ -240,31 +288,31 @@ bool ChatDB::verifyUser(const std::string &login, const std::string &password)
 
     sqlite3_bind_text(stmt, 1, login.c_str(), -1, SQLITE_STATIC);
 
+    bool ok = false;
     if (sqlite3_step(stmt) == SQLITE_ROW)
     {
         const char *stored_hash = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
         if (stored_hash)
         {
-            std::string password_salt = "strong_salt_12345" + password;
-            std::hash<std::string> hash;
-            size_t hash_value = hash(password_salt);
-            std::string hash_password = std::to_string(hash_value);
-
-            sqlite3_finalize(stmt);
-            logAction("Проверили пользователя " + login);
-            std::cout << "Проверили пользователя " << login << std::endl;
-            return true;
-            // return hash_password == stored_hash;
+            ok = verifyPassword(password, stored_hash);
         }
     }
-    logAction("Не смогли проверить пользователя " + login);
-    std::cout << "Не смогли проверить пользователя " << login << std::endl;
     sqlite3_finalize(stmt);
-    return false;
+
+    if (ok)
+    {
+        logAction("Verified user " + login);
+    }
+    else
+    {
+        logAction("Failed to verify user " + login);
+    }
+    return ok;
 }
 
-std::vector<std::string> ChatDB ::getUserMessages(const std::string &login)
+std::vector<std::string> ChatDB::getUserMessages(const std::string &login)
 {
+    std::lock_guard<std::recursive_mutex> lock(ChatDBMutex);
     sqlite3_stmt *stmt;
     std::vector<std::string> messages;
 
@@ -299,57 +347,52 @@ std::vector<std::string> ChatDB ::getUserMessages(const std::string &login)
 
         if (message && timestamp)
         {
-            messages.push_back(std::string(message) + " (" + std::string(timestamp ? timestamp : "нет сообщений") + ")");
+            messages.push_back(std::string(message) + " (" + std::string(timestamp) + ")");
         }
     }
 
-    sqlite3_finalize(stmt); // освободили ресурсы
-    logAction("Вывели пользователю " + login + " сообщения");
+    sqlite3_finalize(stmt);
     return messages;
 }
 
-std::vector<std::string> ChatDB ::getUserList()
+std::vector<std::string> ChatDB::getUserList()
 {
+    std::lock_guard<std::recursive_mutex> lock(ChatDBMutex);
     sqlite3_stmt *stmt;
     std::vector<std::string> loginUsers;
     const char *sql = "SELECT login FROM users";
 
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK)
-    {
-        while (sqlite3_step(stmt) == SQLITE_ROW)
-        {
-            const char *login = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
-
-            if (login)
-            {
-                loginUsers.push_back(login);
-            }
-        }
-
-        sqlite3_finalize(stmt);
-        return loginUsers;
-    }
-    else
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
     {
         std::cerr << "Ошибка подготовки: " << sqlite3_errmsg(db) << std::endl;
         return {};
     }
-    logAction("Получили список пользователей");
+
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        const char *login = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
+        if (login)
+        {
+            loginUsers.push_back(login);
+        }
+    }
+
+    sqlite3_finalize(stmt);
+    return loginUsers;
 }
 
-void ChatDB ::logAction(const std::string &action)
+void ChatDB::logAction(const std::string &action)
 {
+    std::lock_guard<std::recursive_mutex> lock(ChatDBMutex);
     sqlite3_stmt *stmt;
     const char *sql = "INSERT INTO logs (action, timestamp) VALUES (?, datetime('now'));";
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
     {
-        std::cerr << "Ошибка подготовки: " << std::endl;
         return;
     }
 
     sqlite3_bind_text(stmt, 1, action.c_str(), -1, SQLITE_STATIC);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    return;
 }
