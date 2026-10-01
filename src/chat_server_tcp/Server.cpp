@@ -1,10 +1,27 @@
 #include "Server.h"
+#include <algorithm>
+#include <vector>
 
 bool Server::send_line(int sock, const std::string &msg)
 {
     std::string out = msg + "\n";
-    size_t r = send(sock, out.c_str(), out.size(), 0);
-    return r >= 0;
+    const char *data = out.c_str();
+    size_t left = out.size();
+    while (left > 0)
+    {
+#ifdef _WIN32
+        const int sent = ::send(sock, data, static_cast<int>(left), 0);
+#else
+        const ssize_t sent = ::send(sock, data, left, 0);
+#endif
+        if (sent < 0)
+        {
+            return false;
+        }
+        data += sent;
+        left -= static_cast<size_t>(sent);
+    }
+    return true;
 }
 
 std::string Server::getCurrentTimestamp()
@@ -17,10 +34,9 @@ std::string Server::getCurrentTimestamp()
 
 Server::Server() : db("tcp_chat.db")
 {
-    // Создаем администратора при первом запуске
     if (db.getUserId("admin") == -1)
     {
-        db.addUser("admin", "Администратор", "admin123");
+        db.addUser("admin", "Administrator", "admin123");
     }
 
 #ifdef _WIN32
@@ -40,7 +56,8 @@ Server::Server() : db("tcp_chat.db")
         exit(1);
     }
 
-    if (sock < 0)
+    int opt = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&opt), sizeof(opt)) < 0)
     {
         std::cerr << "Warning: setsockopt(SO_REUSEADDR) failed: " << strerror(errno) << std::endl;
     }
@@ -61,15 +78,14 @@ Server::Server() : db("tcp_chat.db")
         exit(1);
     }
 
-    logInfo("Сервер запущен на порту 12345");
-    db.logAction("Сервер запущен на порту 12345");
-    std::cout << "[SERVER] Сервер запущен на порту 12345" << std::endl;
+    logInfo("Server listening on port 12345");
+    db.logAction("Server listening on port 12345");
 }
 
 Server::~Server()
 {
     std::lock_guard<std::mutex> lock(clientsMutex);
-    db.logAction("Сервер завершается, отключаем клиентов");
+    db.logAction("Server shutting down");
 
 #ifdef _WIN32
     closesocket(sock);
@@ -81,14 +97,10 @@ Server::~Server()
     for (int s : clientSockets)
         close(s);
 #endif
-    std::cout << "Server shutdown" << std::endl;
 }
 
 void Server::run()
 {
-    logInfo("Server is running on port 12345");
-    db.logAction("Сервер запущен и ожидает подключения клиентов");
-
     while (true)
     {
         struct sockaddr_in clientAddr;
@@ -103,12 +115,12 @@ void Server::run()
 
         char clientIP[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &clientAddr.sin_addr, clientIP, INET_ADDRSTRLEN);
+        db.logAction(std::string("Client connected socket=") + std::to_string(clientSocket) + " ip=" + clientIP);
 
-        db.logAction(std::string("Клиент подключен: ") + std::to_string(clientSocket) + " с IP " + clientIP);
-        std::cout << "[SERVER] Клиент подключен: сокет=" << clientSocket << ", IP=" << clientIP << std::endl;
-
-        std::lock_guard<std::mutex> lock(clientsMutex);
-        clientSockets.push_back(clientSocket);
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex);
+            clientSockets.push_back(clientSocket);
+        }
         std::thread(&Server::handleClient, this, clientSocket).detach();
     }
 }
@@ -118,15 +130,12 @@ void Server::handleClient(int clientSocket)
     char buffer[BUFFER_SIZE];
     bool authorized = false;
     std::string login;
+    std::string lineBuffer;
 
     while (true)
     {
         memset(buffer, 0, sizeof(buffer));
-        int rec = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-
-        // Получено сообщение от клиента; подробности выводим только по событиям ниже
-        logInfo("Получено сообщение от клиента " + std::to_string(clientSocket));
-        db.logAction("Получено сообщение от клиента " + std::to_string(clientSocket));
+        const int rec = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
 
         if (rec <= 0)
         {
@@ -134,26 +143,36 @@ void Server::handleClient(int clientSocket)
             return;
         }
 
-        buffer[rec] = '\0';
-        std::string message(buffer);
+        lineBuffer.append(buffer, static_cast<size_t>(rec));
 
-        if (message.size() > BUFFER_SIZE - 50)
+        std::size_t pos;
+        while ((pos = lineBuffer.find('\n')) != std::string::npos)
         {
-            send_line(clientSocket, "Message is too long");
-            continue;
-        }
-
-        if (!authorized)
-        {
-            handleUnauthorizedClient(clientSocket, message, authorized, login);
-        }
-        else
-        {
-            handleAuthorizedClient(clientSocket, login, message);
-            if (message == "EXIT")
+            std::string message = lineBuffer.substr(0, pos);
+            lineBuffer.erase(0, pos + 1);
+            if (!message.empty() && message.back() == '\r')
             {
-                authorized = false;
-                login.clear();
+                message.pop_back();
+            }
+
+            if (message.size() > BUFFER_SIZE - 50)
+            {
+                send_line(clientSocket, "Message is too long");
+                continue;
+            }
+
+            if (!authorized)
+            {
+                handleUnauthorizedClient(clientSocket, message, authorized, login);
+            }
+            else
+            {
+                handleAuthorizedClient(clientSocket, login, message);
+                if (message == "EXIT")
+                {
+                    authorized = false;
+                    login.clear();
+                }
             }
         }
     }
@@ -162,19 +181,17 @@ void Server::handleClient(int clientSocket)
 void Server::handleClientDisconnect(int clientSocket, bool authorized, const std::string &login)
 {
     std::string who = authorized ? login : std::to_string(clientSocket);
-    logInfo("Client disconnected: " + who);
-    db.logAction("Клиент отключен: " + who);
-    std::cout << "[SERVER] Клиент отключен: " << who << std::endl;
+    db.logAction("Client disconnected: " + who);
     closeClients(clientSocket);
 }
 
 void Server::handleUnauthorizedClient(int clientSocket, const std::string &message, bool &authorized, std::string &login)
 {
-    if (message.substr(0, 8) == "REGISTER")
+    if (message.rfind("REGISTER", 0) == 0)
     {
         handleRegistration(clientSocket, message);
     }
-    else if (message.substr(0, 4) == "AUTH")
+    else if (message.rfind("AUTH", 0) == 0)
     {
         handleAuthorization(clientSocket, message, authorized, login);
     }
@@ -182,22 +199,19 @@ void Server::handleUnauthorizedClient(int clientSocket, const std::string &messa
     {
         if (!send_line(clientSocket, "I'm expecting AUTH or REGISTER"))
         {
-            logError("Error sending auth request to client");
-            db.logAction("Ошибка отправки запроса авторизации клиенту " + std::to_string(clientSocket));
             closeClients(clientSocket);
         }
-        std::cout << "[SERVER] Неавторизованная команда от сокета " << clientSocket << std::endl;
     }
 }
 
 void Server::handleAuthorizedClient(int clientSocket, const std::string &login,
                                     const std::string &message)
 {
-    if (message.substr(0, 3) == "ALL")
+    if (message.rfind("ALL", 0) == 0)
     {
         handlePublicMessage(clientSocket, login, message);
     }
-    else if (message.substr(0, 7) == "PRIVATE")
+    else if (message.rfind("PRIVATE", 0) == 0)
     {
         handlePrivateMessage(clientSocket, login, message);
     }
@@ -225,24 +239,20 @@ void Server::handleAuthorizedClient(int clientSocket, const std::string &login,
 
 void Server::handleRegistration(int clientSocket, const std::string &message)
 {
-    std::istringstream iss(message.substr(9));
+    // Protocol: REGISTER <login> <username> <password>
+    std::istringstream iss(message.substr(8));
     std::string login, name, password;
     iss >> login >> name >> password;
-    std::getline(iss, name);
 
     if (login.empty() || name.empty() || password.empty())
     {
         send_line(clientSocket, "REGISTER_FAILED: All fields required");
-        std::cout << "[SERVER] Регистрация отклонена: пустые поля" << std::endl;
-        db.logAction("Регистрация не удалась: все поля обязательны");
         return;
     }
 
     if (login.length() < 3 || password.length() < 3)
     {
         send_line(clientSocket, "REGISTER_FAILED: Login and password must be at least 3 characters");
-        std::cout << "[SERVER] Регистрация отклонена: логин/пароль < 3 символов" << std::endl;
-        db.logAction("Регистрация не удалась: логин и пароль должны быть не менее 3 символов");
         return;
     }
 
@@ -252,87 +262,82 @@ void Server::handleRegistration(int clientSocket, const std::string &message)
         return;
     }
 
-    db.addUser(login, name, password);
+    if (!db.addUser(login, name, password))
+    {
+        send_line(clientSocket, "REGISTER_FAILED: Could not create user");
+        return;
+    }
     send_line(clientSocket, "REGISTER_SUCCESS");
-    std::cout << "[SERVER] Зарегистрирован новый пользователь: " << login << std::endl;
-    db.logAction("Зарегистрирован новый пользователь: " + login);
+    db.logAction("Registered user: " + login);
 }
 
 void Server::handleAuthorization(int clientSocket, const std::string &message, bool &authorized, std::string &login)
 {
-    std::istringstream iss(message.substr(5));
+    std::istringstream iss(message.substr(4));
     std::string login_input, password_input;
     iss >> login_input >> password_input;
 
-    db.logAction("Попытка авторизации клиента: " + login_input);
-    std::cout << "[SERVER] Попытка авторизации: login='" << login_input << "'" << std::endl;
+    db.logAction("Auth attempt: " + login_input);
 
-    if (db.verifyUser(login_input, password_input) == true)
+    if (db.verifyUser(login_input, password_input))
     {
         authorized = true;
         login = login_input;
 
-        // Привязываем сокет клиента к его логину для доставки приватных сообщений
         {
             std::lock_guard<std::mutex> lock(clientsMutex);
             clientLogins[clientSocket] = login;
         }
         send_line(clientSocket, "AUTH_SUCCESS");
-        logInfo("Клиент авторизован: " + login_input);
-        db.logAction("Клиент авторизован: " + login_input);
-        std::cout << "[SERVER] Авторизация успешна: " << login_input << std::endl;
+        db.logAction("Auth success: " + login_input);
     }
     else
     {
-        send_line(clientSocket, "AUTH_FAILED: Неудачная авторизация");
-        db.logAction("Неудачная авторизация: " + login_input);
-        std::cout << "[SERVER] Авторизация отклонена: " << login_input << std::endl;
+        send_line(clientSocket, "AUTH_FAILED: Invalid credentials");
+        db.logAction("Auth failed: " + login_input);
     }
 }
 
 void Server::handlePublicMessage(int clientSocket, const std::string &login, const std::string &message)
 {
-    std::string content = message.substr(4);
+    std::string content = message.size() > 3 ? message.substr(3) : "";
+    if (!content.empty() && content[0] == ' ')
+    {
+        content.erase(0, 1);
+    }
 
-    // Сохраняем в базу (receiver = "" для общего чата)
     db.addMessage(login, "", content);
 
-    // Рассылаем всем
     std::string formattedContent = getCurrentTimestamp() + " [" + login + "] " + content;
     broadcastMessage(formattedContent, clientSocket);
-    std::cout << "[SERVER] Публичное сообщение от '" << login << "'" << std::endl;
 }
 
 void Server::handlePrivateMessage(int clientSocket, const std::string &login,
                                   const std::string &message)
 {
-    std::istringstream iss(message.substr(8));
+    std::istringstream iss(message.substr(7));
     std::string receiver, content;
     iss >> receiver;
     std::getline(iss, content);
-    content = content.empty() ? "" : content.substr(1);
+    if (!content.empty() && content[0] == ' ')
+    {
+        content.erase(0, 1);
+    }
 
     if (receiver.empty())
     {
         send_line(clientSocket, "PRIVATE_FAILED: Receiver required");
-        std::cout << "[SERVER] Приватное сообщение отклонено: отсутствует получатель" << std::endl;
         return;
     }
 
-    // Проверяем существование получателя
     if (db.getUserId(receiver) == -1)
     {
         send_line(clientSocket, "PRIVATE_FAILED: User not found");
-        std::cout << "[SERVER] Приватное сообщение отклонено: пользователь не найден" << std::endl;
         return;
     }
 
-    // Сохраняем в базу
     db.addMessage(login, receiver, content);
-
-    // Отправляем приватное сообщение
     privateMessage(login, receiver, content, clientSocket);
-    std::cout << "[SERVER] Приватное сообщение от '" << login << "' к '" << receiver << "'" << std::endl;
 }
 
 void Server::handleGetUsers(int clientSocket, const std::string &login)
@@ -346,31 +351,26 @@ void Server::handleGetUsers(int clientSocket, const std::string &login)
 
     if (!send_line(clientSocket, userList))
     {
-        logError("Error sending user list to client");
-        db.logAction("Ошибка отправки списка пользователей клиенту " + login);
+        db.logAction("Failed to send user list to " + login);
         closeClients(clientSocket);
     }
 }
 
 void Server::handleClientExit(int clientSocket, const std::string &login)
 {
-    logInfo("Client requested exit: " + login);
-    db.logAction("Клиент запросил выход: " + login);
-    std::cout << "[SERVER] Пользователь ‘" << login << "’ запросил выход" << std::endl;
+    db.logAction("Client exit: " + login);
+    std::lock_guard<std::mutex> lock(clientsMutex);
     clientLogins.erase(clientSocket);
 }
 
 void Server::handleGetHistory(int clientSocket, const std::string &login)
 {
-    // Получаем историю общего чата из базы
     auto history = db.getPublicMessages();
 
     for (const auto &msg : history)
     {
         if (!send_line(clientSocket, msg))
         {
-            logError("Failed to send history to " + login);
-            db.logAction("Ошибка отправки истории клиенту " + login);
             closeClients(clientSocket);
             return;
         }
@@ -392,15 +392,12 @@ void Server::handleGetPrivateHistory(int clientSocket, const std::string &login,
         return;
     }
 
-    // Получаем приватную историю из базы
     auto privateHistory = db.getMessages(login, other);
 
     for (const auto &msg : privateHistory)
     {
         if (!send_line(clientSocket, msg))
         {
-            logError("Failed to send private history to " + login);
-            db.logAction("Ошибка отправки приватной истории клиенту " + login);
             closeClients(clientSocket);
             return;
         }
@@ -413,24 +410,22 @@ void Server::handleUnknownCommand(int clientSocket, const std::string &login)
 {
     if (!send_line(clientSocket, "Unknown command"))
     {
-        logError("Error sending unknown command response");
-        db.logAction("Ошибка отправки ответа на неизвестную команду клиенту " + login);
         closeClients(clientSocket);
     }
 }
 
 void Server::closeClients(int clientSocket)
 {
-    std::lock_guard<std::mutex> lock(clientsMutex);
-    auto it = std::find(clientSockets.begin(), clientSockets.end(), clientSocket);
-
-    if (it != clientSockets.end())
     {
-        clientSockets.erase(it);
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        auto it = std::find(clientSockets.begin(), clientSockets.end(), clientSocket);
+        if (it != clientSockets.end())
+        {
+            clientSockets.erase(it);
+        }
         clientLogins.erase(clientSocket);
-
-        logInfo("Client socket closed: " + std::to_string(clientSocket));
     }
+    socketClose(clientSocket);
 }
 
 void Server::socketClose(int clientSocket)
@@ -441,23 +436,34 @@ void Server::socketClose(int clientSocket)
     close(clientSocket);
 #endif
 }
+
 void Server::broadcastMessage(const std::string &message, int senderSocket)
 {
-    std::lock_guard<std::mutex> lock(clientsMutex);
-
-    for (int socket : clientSockets)
+    std::vector<int> targets;
+    std::vector<int> failed;
     {
-        if (socket != senderSocket)
-        { // Не отправляем отправителю
-            if (!send_line(socket, message))
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        for (int socket : clientSockets)
+        {
+            if (socket != senderSocket)
             {
-                logError("Error sending message to client " + std::to_string(socket));
-                closeClients(socket);
+                targets.push_back(socket);
             }
         }
     }
 
-    logInfo("Broadcasted message: " + message);
+    for (int socket : targets)
+    {
+        if (!send_line(socket, message))
+        {
+            failed.push_back(socket);
+        }
+    }
+
+    for (int socket : failed)
+    {
+        closeClients(socket);
+    }
 }
 
 void Server::privateMessage(const std::string &sender, const std::string &receiver,
@@ -465,42 +471,48 @@ void Server::privateMessage(const std::string &sender, const std::string &receiv
 {
     std::string message = getCurrentTimestamp() + " [" + sender + " -> " + receiver + "]: " + content;
 
-    std::lock_guard<std::mutex> lock(clientsMutex);
-    bool delivered = false;
-
-    // Отправляем получателю
-    for (const auto &pair : clientLogins)
+    int receiverSocket = -1;
     {
-        if (pair.second == receiver)
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        for (const auto &pair : clientLogins)
         {
-            if (send_line(pair.first, message))
+            if (pair.second == receiver)
             {
-                delivered = true;
+                receiverSocket = pair.first;
+                break;
             }
-            else
-            {
-                logError("Error sending private message to " + receiver);
-                closeClients(pair.first);
-            }
-            break;
         }
     }
 
-    // Отправляем отправителю (если не самому себе)
+    std::vector<int> failed;
+    bool delivered = false;
+
+    if (receiverSocket >= 0)
+    {
+        if (send_line(receiverSocket, message))
+        {
+            delivered = true;
+        }
+        else
+        {
+            failed.push_back(receiverSocket);
+        }
+    }
+
     if (receiver != sender)
     {
         if (!send_line(senderSocket, message))
         {
-            logError("Error sending private message to sender");
-            closeClients(senderSocket);
+            failed.push_back(senderSocket);
         }
     }
 
-    if (delivered)
+    for (int socket : failed)
     {
-        logInfo("Private message sent from " + sender + " to " + receiver);
+        closeClients(socket);
     }
-    else
+
+    if (!delivered)
     {
         send_line(senderSocket, "User is offline");
     }
