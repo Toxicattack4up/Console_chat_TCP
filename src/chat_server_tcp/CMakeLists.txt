@@ -1,4 +1,4 @@
-find_package(SQLite3 REQUIRED)
+# SQLite3 imported target is ensured by the root CMakeLists.txt
 
 add_library(chat_server
     Server.cpp
